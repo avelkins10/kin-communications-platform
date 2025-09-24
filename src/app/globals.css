@@ -1,0 +1,22 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 11 100% 6%;
+  --foreground: 210 40% 98%;
+}
+
+html, body, :root {
+  height: 100%;
+}
+
+body {
+  @apply bg-background text-foreground antialiased;
+}
+
+.container-max {
+  @apply container mx-auto px-4;
+}
+
+

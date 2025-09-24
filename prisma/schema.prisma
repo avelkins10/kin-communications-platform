@@ -1,0 +1,158 @@
+// Datasource
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Generator
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Core Models
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  passwordHash  String?
+  image         String?
+  role          String     @default("user")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  contacts      Contact[]
+  calls         Call[]     @relation("UserCalls")
+  messages      Message[]  @relation("UserMessages")
+}
+
+model Contact {
+  id           String    @id @default(cuid())
+  organization String?
+  firstName    String
+  lastName     String
+  phone        String    @db.VarChar(32)
+  email        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  ownerId      String?
+  owner        User?     @relation(fields: [ownerId], references: [id])
+  groups       ContactGroupOnContact[]
+  calls        Call[]
+  messages     Message[]
+
+  @@index([phone])
+  @@index([email])
+}
+
+model Call {
+  id            String    @id @default(cuid())
+  direction     CallDirection
+  status        CallStatus @default(PENDING)
+  fromNumber    String
+  toNumber      String
+  startedAt     DateTime? 
+  endedAt       DateTime? 
+  durationSec   Int?      
+  recordingUrl  String?
+  userId        String?
+  user          User?     @relation("UserCalls", fields: [userId], references: [id])
+  contactId     String?
+  contact       Contact?  @relation(fields: [contactId], references: [id])
+  voicemail     Voicemail?
+  createdAt     DateTime  @default(now())
+
+  @@index([userId])
+  @@index([contactId])
+  @@index([fromNumber])
+  @@index([toNumber])
+}
+
+model Message {
+  id            String    @id @default(cuid())
+  direction     MessageDirection
+  status        MessageStatus @default(QUEUED)
+  fromNumber    String
+  toNumber      String
+  body          String
+  mediaUrl      String?
+  sentAt        DateTime?
+  deliveredAt   DateTime?
+  readAt        DateTime?
+  userId        String?
+  user          User?     @relation("UserMessages", fields: [userId], references: [id])
+  contactId     String?
+  contact       Contact?  @relation(fields: [contactId], references: [id])
+  createdAt     DateTime  @default(now())
+
+  @@index([userId])
+  @@index([contactId])
+}
+
+model Voicemail {
+  id           String   @id @default(cuid())
+  callId       String   @unique
+  call         Call     @relation(fields: [callId], references: [id])
+  transcription String?
+  audioUrl      String
+  createdAt     DateTime @default(now())
+}
+
+model RoutingRule {
+  id          String   @id @default(cuid())
+  name        String
+  priority    Int      @default(0)
+  matchType   String   // e.g., number_prefix, skill, schedule
+  matchValue  String
+  action      String   // e.g., route_to_user, route_to_group, voicemail
+  actionValue String?
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model ContactGroup {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  members   ContactGroupOnContact[]
+}
+
+model ContactGroupOnContact {
+  contactId String
+  groupId   String
+  contact   Contact     @relation(fields: [contactId], references: [id])
+  group     ContactGroup @relation(fields: [groupId], references: [id])
+
+  @@id([contactId, groupId])
+}
+
+// Enums
+enum CallDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum CallStatus {
+  PENDING
+  RINGING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  MISSED
+  VOICEMAIL
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+
