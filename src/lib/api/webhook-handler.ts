@@ -14,7 +14,7 @@ export async function withWebhookSecurity<T>(
   }
   
   const webhookId = params.get('CallSid') || params.get('MessageSid') || params.get('TaskSid');
-  if (!webhookId) {
+  if (!webhookId || typeof webhookId !== 'string') {
     return new Response('Missing webhook ID', { status: 400 });
   }
   

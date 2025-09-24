@@ -19,6 +19,7 @@
     "isolatedModules": true,
     "jsx": "preserve",
     "incremental": true,
+    "baseUrl": ".",
     "paths": {
       "@/lib/*": [
         "src/lib/*"
@@ -46,6 +47,8 @@
     ".next/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "SDK Docs/**/*",
+    "docs/sdks/templates/**/*"
   ]
 }

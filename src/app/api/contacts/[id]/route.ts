@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { prisma } from "@/lib/db";
 import { updateContactSchema } from "@/lib/validations/contact";
 
 export async function GET(
@@ -14,7 +14,7 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const contact = await db.contact.findFirst({
+    const contact = await prisma.contact.findFirst({
       where: {
         id: params.id,
         ownerId: session.user.id,
@@ -67,7 +67,7 @@ export async function PUT(
     const validatedData = updateContactSchema.parse(body);
 
     // Check if contact exists and belongs to user
-    const existingContact = await db.contact.findFirst({
+    const existingContact = await prisma.contact.findFirst({
       where: {
         id: params.id,
         ownerId: session.user.id,
@@ -80,7 +80,7 @@ export async function PUT(
 
     // Check for duplicate phone number if phone is being updated
     if (validatedData.phone && validatedData.phone !== existingContact.phone) {
-      const duplicateContact = await db.contact.findFirst({
+      const duplicateContact = await prisma.contact.findFirst({
         where: {
           phone: validatedData.phone,
           ownerId: session.user.id,
@@ -97,7 +97,7 @@ export async function PUT(
     }
 
     // Update contact
-    const updatedContact = await db.contact.update({
+    const updatedContact = await prisma.contact.update({
       where: { id: params.id },
       data: {
         ...validatedData,
@@ -115,13 +115,13 @@ export async function PUT(
     // Update groups if specified
     if (validatedData.groupIds !== undefined) {
       // Remove existing group memberships
-      await db.contactGroupOnContact.deleteMany({
+      await prisma.contactGroupOnContact.deleteMany({
         where: { contactId: params.id },
       });
 
       // Add new group memberships
       if (validatedData.groupIds.length > 0) {
-        await db.contactGroupOnContact.createMany({
+        await prisma.contactGroupOnContact.createMany({
           data: validatedData.groupIds.map((groupId) => ({
             contactId: params.id,
             groupId,
@@ -130,7 +130,7 @@ export async function PUT(
       }
 
       // Fetch updated contact with groups
-      const finalContact = await db.contact.findUnique({
+      const finalContact = await prisma.contact.findUnique({
         where: { id: params.id },
         include: {
           groups: {
@@ -177,7 +177,7 @@ export async function DELETE(
     }
 
     // Check if contact exists and belongs to user
-    const existingContact = await db.contact.findFirst({
+    const existingContact = await prisma.contact.findFirst({
       where: {
         id: params.id,
         ownerId: session.user.id,
@@ -189,7 +189,7 @@ export async function DELETE(
     }
 
     // Delete contact (this will cascade delete related records)
-    await db.contact.delete({
+    await prisma.contact.delete({
       where: { id: params.id },
     });
 

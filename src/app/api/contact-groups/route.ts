@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { prisma } from "@/lib/db";
 import { contactGroupSchema } from "@/lib/validations/contact";
 
 export async function GET(request: NextRequest) {
@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Get all contact groups with member counts
-    const groups = await db.contactGroup.findMany({
+    const groups = await prisma.contactGroup.findMany({
       include: {
         _count: {
           select: {
@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
     const validatedData = contactGroupSchema.parse(body);
 
     // Check for duplicate group name
-    const existingGroup = await db.contactGroup.findFirst({
+    const existingGroup = await prisma.contactGroup.findFirst({
       where: {
         name: validatedData.name,
       },
@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create contact group
-    const group = await db.contactGroup.create({
+    const group = await prisma.contactGroup.create({
       data: validatedData,
     });
 

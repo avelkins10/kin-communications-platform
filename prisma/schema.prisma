@@ -67,6 +67,9 @@ model Call {
   endedAt       DateTime? 
   durationSec   Int?      
   recordingUrl  String?
+  twilioCallSid String?   @unique
+  recordingSid  String?
+  transcription String?   @db.Text
   userId        String?
   user          User?     @relation("UserCalls", fields: [userId], references: [id])
   contactId     String?
@@ -78,6 +81,8 @@ model Call {
   @@index([contactId])
   @@index([fromNumber])
   @@index([toNumber])
+  @@index([twilioCallSid])
+  @@index([recordingSid])
 }
 
 model Message {

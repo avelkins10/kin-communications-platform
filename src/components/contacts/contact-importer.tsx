@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Upload, Download, CheckCircle, XCircle, AlertCircle } from "lucide-react";
-import { ContactImportResult } from "@/types";
+import { ContactImportResult } from "@/types/index";
 
 interface ContactImporterProps {
   open: boolean;

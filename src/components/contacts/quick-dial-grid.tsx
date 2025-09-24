@@ -1,6 +1,6 @@
 "use client";
 
-import { Contact } from "@/types";
+import { Contact } from "@/types/index";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";

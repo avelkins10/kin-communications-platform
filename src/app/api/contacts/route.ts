@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { prisma } from "@/lib/db";
 import { contactSearchSchema, createContactSchema } from "@/lib/validations/contact";
-import { ContactType } from "@/types";
+import { ContactType } from "@/types/index";
 
 // Duplicate phone strategy
 // DB-enforced uniqueness on (ownerId, phone) defined in prisma schema.
@@ -83,7 +83,7 @@ export async function GET(request: NextRequest) {
 
     // Get contacts with pagination
     const [contacts, total] = await Promise.all([
-      db.contact.findMany({
+      prisma.contact.findMany({
         where,
         include: {
           groups: {
@@ -96,7 +96,7 @@ export async function GET(request: NextRequest) {
         skip,
         take: validatedParams.limit,
       }),
-      db.contact.count({ where }),
+      prisma.contact.count({ where }),
     ]);
 
     // Transform contacts to include group names
@@ -136,7 +136,7 @@ export async function POST(request: NextRequest) {
     // Create contact
     let contact;
     try {
-      contact = await db.contact.create({
+      contact = await prisma.contact.create({
         data: {
           ...validatedData,
           ownerId: session.user.id,
@@ -163,7 +163,7 @@ export async function POST(request: NextRequest) {
 
     // Add to groups if specified
     if (validatedData.groupIds && validatedData.groupIds.length > 0) {
-      await db.contactGroupOnContact.createMany({
+      await prisma.contactGroupOnContact.createMany({
         data: validatedData.groupIds.map((groupId) => ({
           contactId: contact.id,
           groupId,
@@ -171,7 +171,7 @@ export async function POST(request: NextRequest) {
       });
 
       // Fetch updated contact with groups
-      const updatedContact = await db.contact.findUnique({
+      const updatedContact = await prisma.contact.findUnique({
         where: { id: contact.id },
         include: {
           groups: {

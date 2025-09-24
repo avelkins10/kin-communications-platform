@@ -109,8 +109,25 @@ export interface Call {
   endedAt?: string | Date | null;
   durationSec?: number | null;
   recordingUrl?: string | null;
+  twilioCallSid?: string | null;
+  recordingSid?: string | null;
+  transcription?: string | null;
   userId?: string | null;
   contactId?: string | null;
+  createdAt: string | Date;
+  contact?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    organization?: string | null;
+    phone: string;
+    email?: string | null;
+  } | null;
+  user?: {
+    id: string;
+    name?: string | null;
+    email?: string | null;
+  } | null;
 }
 
 export type MessageDirection = "INBOUND" | "OUTBOUND";

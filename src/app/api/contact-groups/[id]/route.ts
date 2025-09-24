@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { prisma } from "@/lib/db";
 import { contactGroupSchema, contactGroupUpdateSchema } from "@/lib/validations/contact";
 
 export async function GET(
@@ -14,16 +14,12 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const group = await db.contactGroup.findUnique({
+    const group = await prisma.contactGroup.findUnique({
       where: { id: params.id },
       include: {
         members: {
           include: {
-            contact: {
-              where: {
-                ownerId: session.user.id,
-              },
-            },
+            contact: true,
           },
         },
         _count: {
@@ -38,8 +34,10 @@ export async function GET(
       return NextResponse.json({ error: "Contact group not found" }, { status: 404 });
     }
 
-    // Filter out members where contact is null (contacts not owned by user)
-    const filteredMembers = group.members.filter(member => member.contact !== null);
+    // Filter out members where contact is null or not owned by user
+    const filteredMembers = group.members.filter(member => 
+      member.contact && member.contact.ownerId === session.user.id
+    );
 
     return NextResponse.json({
       ...group,
@@ -75,7 +73,7 @@ export async function PUT(
     // }
 
     // Check if group exists
-    const existingGroup = await db.contactGroup.findUnique({
+    const existingGroup = await prisma.contactGroup.findUnique({
       where: { id: params.id },
     });
 
@@ -87,7 +85,7 @@ export async function PUT(
     if (validatedData.name || validatedData.description !== undefined) {
       // Check for duplicate group name (excluding current group)
       if (validatedData.name) {
-        const duplicateGroup = await db.contactGroup.findFirst({
+        const duplicateGroup = await prisma.contactGroup.findFirst({
           where: {
             name: validatedData.name,
             id: { not: params.id },
@@ -101,7 +99,7 @@ export async function PUT(
         }
       }
 
-      await db.contactGroup.update({
+      await prisma.contactGroup.update({
         where: { id: params.id },
         data: {
           name: validatedData.name,
@@ -112,7 +110,7 @@ export async function PUT(
 
     // Add members
     if (validatedData.addContactIds && validatedData.addContactIds.length > 0) {
-      await db.contactGroupOnContact.createMany({
+      await prisma.contactGroupOnContact.createMany({
         data: validatedData.addContactIds.map((contactId) => ({
           contactId,
           groupId: params.id,
@@ -123,7 +121,7 @@ export async function PUT(
 
     // Remove members
     if (validatedData.removeContactIds && validatedData.removeContactIds.length > 0) {
-      await db.contactGroupOnContact.deleteMany({
+      await prisma.contactGroupOnContact.deleteMany({
         where: {
           groupId: params.id,
           contactId: { in: validatedData.removeContactIds },
@@ -132,7 +130,7 @@ export async function PUT(
     }
 
     // Return updated group with counts and resolved members
-    const group = await db.contactGroup.findUnique({
+    const group = await prisma.contactGroup.findUnique({
       where: { id: params.id },
       include: {
         members: {
@@ -178,7 +176,7 @@ export async function DELETE(
     }
 
     // Check if group exists
-    const existingGroup = await db.contactGroup.findUnique({
+    const existingGroup = await prisma.contactGroup.findUnique({
       where: { id: params.id },
     });
 
@@ -187,7 +185,7 @@ export async function DELETE(
     }
 
     // Delete contact group (this will cascade delete group memberships)
-    await db.contactGroup.delete({
+    await prisma.contactGroup.delete({
       where: { id: params.id },
     });
 

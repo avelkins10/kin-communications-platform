@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { prisma } from "@/lib/db";
 import { smsContactSchema } from "@/lib/validations/contact";
 
 export async function POST(
@@ -21,7 +21,7 @@ export async function POST(
     });
 
     // Check if contact exists and belongs to user
-    const contact = await db.contact.findFirst({
+    const contact = await prisma.contact.findFirst({
       where: {
         id: params.id,
         ownerId: session.user.id,
@@ -41,7 +41,7 @@ export async function POST(
 
     // TODO: Implement actual Twilio SMS sending
     // For now, create a placeholder message record
-    const message = await db.message.create({
+    const message = await prisma.message.create({
       data: {
         direction: "OUTBOUND",
         status: "QUEUED",

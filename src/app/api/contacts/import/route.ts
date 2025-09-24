@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { prisma } from "@/lib/db";
 import { csvContactSchema, csvImportResultSchema } from "@/lib/validations/contact";
 
 export async function POST(request: NextRequest) {
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Parse header row
-    const headers = lines[0].split(",").map(h => h.trim().toLowerCase());
+    const headers = lines[0]?.split(",").map(h => h.trim().toLowerCase()) || [];
     const dataRows = lines.slice(1);
 
     // Expected headers mapping
@@ -114,6 +114,7 @@ export async function POST(request: NextRequest) {
     // Process each row
     for (let i = 0; i < dataRows.length; i++) {
       const row = dataRows[i];
+      if (!row) continue;
       const values = row.split(",").map(v => v.trim().replace(/^"|"$/g, ""));
 
       try {
@@ -140,11 +141,11 @@ export async function POST(request: NextRequest) {
 
         // Create contact, handle uniqueness via DB
         try {
-          await db.contact.create({
+          await prisma.contact.create({
             data: {
               ...validatedData,
               ownerId: session.user.id,
-              tags: validatedData.tags || [],
+              tags: Array.isArray(validatedData.tags) ? validatedData.tags : [],
             },
           });
         } catch (e: any) {

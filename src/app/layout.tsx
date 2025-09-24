@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { SessionProvider } from "next-auth/react";
+import { SessionProvider } from "@/components/session-provider";
 
 export const metadata: Metadata = {
   title: "KIN Communications Hub",

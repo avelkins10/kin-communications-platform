@@ -12,3 +12,6 @@ dist/
 # API Documentation (contains example secrets)
 api docs?/
 
+
+# SDK Documentation (contains example secrets)
+SDK Docs/

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Contact, ContactGroup, ContactCreateInput, ContactUpdateInput, ContactSearchParams, ContactImportResult } from "@/types";
+import { Contact, ContactGroup, ContactCreateInput, ContactUpdateInput, ContactSearchParams, ContactImportResult } from "@/types/index";
 
 interface UseContactsReturn {
   contacts: Contact[];

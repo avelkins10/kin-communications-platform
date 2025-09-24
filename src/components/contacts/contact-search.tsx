@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ContactType, ContactGroup } from "@/types";
+import { ContactType, ContactGroup } from "@/types/index";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {

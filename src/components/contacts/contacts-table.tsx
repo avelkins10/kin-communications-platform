@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Contact, ContactType } from "@/types";
+import { Contact, ContactType } from "@/types/index";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
