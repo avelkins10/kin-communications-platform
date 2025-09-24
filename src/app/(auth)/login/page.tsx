@@ -47,6 +47,9 @@ export default function LoginPage() {
               {loading ? "Signing in..." : "Sign in"}
             </Button>
           </form>
+          <div className="mt-4">
+            <Button type="button" variant="outline" className="w-full" onClick={() => signIn("google")}>Sign in with Google</Button>
+          </div>
         </CardContent>
         <CardFooter>
           <p className="text-xs text-muted-foreground">Use your KIN credentials to access the dashboard.</p>

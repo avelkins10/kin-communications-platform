@@ -10,6 +10,8 @@ export interface User {
   role: Role;
 }
 
+export type ContactType = "CUSTOMER" | "FIELD_CREW" | "SALES_REP" | "VENDOR";
+
 export interface Contact {
   id: string;
   organization?: string | null;
@@ -17,7 +19,74 @@ export interface Contact {
   lastName: string;
   phone: string;
   email?: string | null;
+  type: ContactType;
+  department?: string | null;
+  notes?: string | null;
+  tags: string[];
+  quickbaseId?: string | null;
+  isFavorite: boolean;
+  createdAt: string | Date;
+  updatedAt: string | Date;
   ownerId?: string | null;
+  groups?: ContactGroup[];
+}
+
+export interface ContactGroup {
+  id: string;
+  name: string;
+  description?: string | null;
+  createdAt: string | Date;
+  updatedAt: string | Date;
+  members?: Contact[];
+}
+
+export interface ContactCreateInput {
+  organization?: string;
+  firstName: string;
+  lastName: string;
+  phone: string;
+  email?: string;
+  type: ContactType;
+  department?: string;
+  notes?: string;
+  tags?: string[];
+  quickbaseId?: string;
+  isFavorite?: boolean;
+  groupIds?: string[];
+}
+
+export interface ContactUpdateInput {
+  organization?: string;
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
+  email?: string;
+  type?: ContactType;
+  department?: string;
+  notes?: string;
+  tags?: string[];
+  quickbaseId?: string;
+  isFavorite?: boolean;
+  groupIds?: string[];
+}
+
+export interface ContactSearchParams {
+  search?: string;
+  type?: ContactType;
+  department?: string;
+  isFavorite?: boolean;
+  groupId?: string;
+  page?: number;
+  limit?: number;
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
+}
+
+export interface ContactImportResult {
+  success: boolean;
+  imported: number;
+  errors: string[];
+  duplicates: number;
 }
 
 export type CallDirection = "INBOUND" | "OUTBOUND";
