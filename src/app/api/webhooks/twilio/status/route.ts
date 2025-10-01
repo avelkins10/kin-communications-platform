@@ -1,84 +1,134 @@
 import { NextRequest } from 'next/server';
+import { prisma } from '@/lib/db';
 import { withWebhookSecurity } from '@/lib/api/webhook-handler';
 import { statusWebhookSchema } from '@/lib/validations/call';
-import { prisma } from '@/lib/db';
+import { quickbaseService } from '@/lib/quickbase/service';
+import * as Sentry from '@sentry/nextjs';
 
 export async function POST(req: NextRequest) {
+  // withWebhookSecurity handles signature validation, idempotency, and transaction wrapping
   return withWebhookSecurity(req, async (params) => {
     // Validate webhook payload
-    const webhookData = statusWebhookSchema.parse({
+    const validatedData = statusWebhookSchema.parse({
       CallSid: params.get('CallSid'),
       CallStatus: params.get('CallStatus'),
       From: params.get('From'),
       To: params.get('To'),
       Timestamp: params.get('Timestamp'),
       CallDuration: params.get('CallDuration'),
-      Direction: params.get('Direction'),
+      Direction: params.get('Direction') as 'inbound' | 'outbound',
       AccountSid: params.get('AccountSid'),
       ApiVersion: params.get('ApiVersion'),
     });
 
-    console.log('Call status webhook received:', webhookData);
+    const { CallSid: callSid, CallStatus: callStatus, CallDuration: callDuration, Timestamp: timestamp } = validatedData;
 
-    // Find the call record by Twilio CallSid
-    const call = await prisma.call.findUnique({
-      where: {
-        twilioCallSid: webhookData.CallSid,
-      },
+    console.log('Status webhook received:', {
+      callSid,
+      callStatus,
+      callDuration,
+      timestamp
     });
 
-    if (!call) {
-      console.error('Call not found for CallSid:', webhookData.CallSid);
-      return;
-    }
-
-    // Map Twilio status to our CallStatus enum
-    const statusMap: Record<string, 'PENDING' | 'RINGING' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED' | 'MISSED' | 'VOICEMAIL'> = {
+    // Map Twilio call status to our internal status enum
+    const statusMap: Record<string, string> = {
       'queued': 'PENDING',
+      'initiated': 'PENDING',
       'ringing': 'RINGING',
       'in-progress': 'IN_PROGRESS',
       'completed': 'COMPLETED',
       'busy': 'FAILED',
-      'failed': 'FAILED',
       'no-answer': 'MISSED',
+      'failed': 'FAILED',
       'canceled': 'FAILED',
     };
 
-    const newStatus = statusMap[webhookData.CallStatus] || 'FAILED';
+    const mappedStatus = statusMap[callStatus] || 'PENDING';
 
-    // Calculate duration if provided
-    let durationSec: number | null = null;
-    if (webhookData.CallDuration) {
-      durationSec = parseInt(webhookData.CallDuration, 10);
+    // Find the call by Twilio CallSid
+    const call = await prisma.call.findUnique({
+      where: { twilioCallSid: callSid }
+    });
+
+    if (!call) {
+      console.log('Call not found for CallSid:', callSid, '- may be created later');
+      // Don't return error - call record might be created after this webhook
+      return;
     }
 
-    // Update call record
+    // Prepare update data
     const updateData: any = {
-      status: newStatus,
+      status: mappedStatus,
     };
 
-    // Set startedAt when call becomes in-progress
-    if (webhookData.CallStatus === 'in-progress' && !call.startedAt) {
+    // Set timestamps based on status
+    if (callStatus === 'ringing' && !call.startedAt) {
       updateData.startedAt = new Date();
     }
 
-    // Set endedAt and duration when call completes
-    if (['completed', 'busy', 'failed', 'no-answer', 'canceled'].includes(webhookData.CallStatus)) {
+    if (callStatus === 'in-progress' && !call.startedAt) {
+      updateData.startedAt = new Date();
+    }
+
+    // For completed/failed/no-answer calls, set end time and duration
+    if (['completed', 'busy', 'no-answer', 'failed', 'canceled'].includes(callStatus)) {
       updateData.endedAt = new Date();
-      if (durationSec !== null) {
-        updateData.durationSec = durationSec;
+
+      if (callDuration) {
+        updateData.durationSec = parseInt(callDuration, 10);
+      } else if (call.startedAt) {
+        // Calculate duration if not provided
+        const durationMs = updateData.endedAt.getTime() - call.startedAt.getTime();
+        updateData.durationSec = Math.floor(durationMs / 1000);
       }
     }
 
+    // Update the call with retry-safe logic
     await prisma.call.update({
-      where: {
-        id: call.id,
-      },
-      data: updateData,
+      where: { id: call.id },
+      data: updateData
     });
 
-    console.log(`Updated call ${call.id} status to ${newStatus}`);
+    console.log(`Updated call ${call.id} to status: ${mappedStatus}`, updateData);
 
+    // Quickbase communication logging for completed calls (non-blocking)
+    if (process.env.QUICKBASE_ENABLED !== 'false' && (mappedStatus === 'COMPLETED' || mappedStatus === 'FAILED' || mappedStatus === 'MISSED')) {
+      try {
+        // Fetch the complete call record with relations for logging
+        const callWithRelations = await prisma.call.findUnique({
+          where: { id: call.id },
+          include: { Contact: true, User: true }
+        });
+
+        if (callWithRelations) {
+          // Only log if call doesn't already have a recording URL (avoid duplicates with recording webhook)
+          if (!callWithRelations.recordingUrl) {
+            await quickbaseService.logCallToQuickbase(callWithRelations, callWithRelations.Contact, callWithRelations.User);
+            
+            Sentry.addBreadcrumb({
+              category: 'quickbase',
+              message: 'Call logged from status webhook',
+              level: 'info',
+              data: { callSid, status: mappedStatus }
+            });
+            console.log('Logged call to Quickbase from status webhook:', callSid);
+          } else {
+            console.log('Skipping Quickbase logging - call already has recording (logged by recording webhook)');
+          }
+        }
+      } catch (error) {
+        Sentry.addBreadcrumb({
+          category: 'quickbase',
+          message: 'Call logging failed from status webhook',
+          level: 'error',
+          data: { callSid, error: error instanceof Error ? error.message : 'Unknown error' }
+        });
+        console.error('Failed to log call to Quickbase from status webhook:', error);
+        // Don't throw - logging failures should not break the webhook
+      }
+    }
+
+    // Return void - withWebhookSecurity handles the response
     return;
   });
 }

@@ -3,11 +3,22 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { contactSearchSchema, createContactSchema } from "@/lib/validations/contact";
-import { ContactType } from "@/types/index";
+import { unstable_cache, revalidateTag } from "next/cache";
 
-// Duplicate phone strategy
-// DB-enforced uniqueness on (ownerId, phone) defined in prisma schema.
-// Unique violations are mapped to HTTP 409 during create/import.
+// Helper: map sortBy to Prisma field
+const sortFieldMap: Record<string, any> = {
+  firstName: "firstName",
+  lastName: "lastName",
+  phone: "phone",
+  email: "email",
+  type: "type",
+  department: "department",
+  createdAt: "createdAt",
+  projectStatus: "projectStatus",
+  statusCategory: "statusCategory",
+  lastContactDate: "lastContactDate",
+  projectCoordinatorId: "projectCoordinatorId",
+};
 
 export async function GET(request: NextRequest) {
   try {
@@ -17,105 +28,160 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const search = searchParams.get("search") || undefined;
-    const type = searchParams.get("type") as ContactType | undefined;
-    const department = searchParams.get("department") || undefined;
-    const isFavorite = searchParams.get("isFavorite") === "true" ? true : undefined;
-    const groupId = searchParams.get("groupId") || undefined;
-    const page = parseInt(searchParams.get("page") || "1");
-    const limit = parseInt(searchParams.get("limit") || "20");
-    const sortBy = searchParams.get("sortBy") || "createdAt";
-    const sortOrder = searchParams.get("sortOrder") || "desc";
-
-    // Validate search parameters
-    const validatedParams = contactSearchSchema.parse({
-      search,
-      type,
-      department,
-      isFavorite,
-      groupId,
-      page,
-      limit,
-      sortBy,
-      sortOrder,
-    });
-
-    const skip = (validatedParams.page - 1) * validatedParams.limit;
-
-    // Build where clause
-    const where: any = {
-      ownerId: session.user.id,
+    
+    // Parse and validate search parameters
+    const searchParamsObj = {
+      search: searchParams.get("search") || undefined,
+      type: searchParams.get("type") || undefined,
+      department: searchParams.get("department") || undefined,
+      isFavorite: searchParams.get("isFavorite") === "true" ? true : undefined,
+      page: parseInt(searchParams.get("page") || "1"),
+      limit: parseInt(searchParams.get("limit") || "20"),
+      sortBy: searchParams.get("sortBy") || "createdAt",
+      sortOrder: (searchParams.get("sortOrder") || "desc") as "asc" | "desc",
+      // Enhanced search parameters
+      sectionType: searchParams.get("sectionType") || undefined,
+      projectStatus: searchParams.get("projectStatus") || undefined,
+      statusCategory: searchParams.get("statusCategory") || undefined,
+      isStale: searchParams.get("isStale") === "true" ? true : undefined,
+      projectCoordinatorId: searchParams.get("projectCoordinatorId") || undefined,
+      slaViolation: searchParams.get("slaViolation") === "true" ? true : undefined,
+      lastContactDateFrom: searchParams.get("lastContactDateFrom") || undefined,
+      lastContactDateTo: searchParams.get("lastContactDateTo") || undefined,
     };
 
-    if (validatedParams.search) {
-      where.OR = [
-        { firstName: { contains: validatedParams.search, mode: "insensitive" } },
-        { lastName: { contains: validatedParams.search, mode: "insensitive" } },
-        { phone: { contains: validatedParams.search, mode: "insensitive" } },
-        { email: { contains: validatedParams.search, mode: "insensitive" } },
-        { organization: { contains: validatedParams.search, mode: "insensitive" } },
-      ];
-    }
+    // Validate search parameters
+    const validatedParams = contactSearchSchema.parse(searchParamsObj);
 
-    if (validatedParams.type) {
-      where.type = validatedParams.type;
-    }
+    const makeWhere = () => {
+      const where: any = {};
+      if (validatedParams.search) {
+        const search = validatedParams.search;
+        where.OR = [
+          { firstName: { contains: search, mode: "insensitive" } },
+          { lastName: { contains: search, mode: "insensitive" } },
+          { email: { contains: search, mode: "insensitive" } },
+          { organization: { contains: search, mode: "insensitive" } },
+          { phone: { contains: search } },
+        ];
+      }
+      if (validatedParams.sectionType === "CUSTOMERS") {
+        where.type = "CUSTOMER";
+      } else if (validatedParams.sectionType === "EMPLOYEES") {
+        where.type = { in: ["FIELD_CREW", "SALES_REP", "VENDOR"] };
+      }
+      if (validatedParams.type) where.type = validatedParams.type;
+      if (validatedParams.department) where.department = validatedParams.department;
+      if (validatedParams.isFavorite !== undefined) where.isFavorite = validatedParams.isFavorite;
+      if (validatedParams.projectStatus) where.projectStatus = validatedParams.projectStatus;
+      if (validatedParams.statusCategory) where.statusCategory = validatedParams.statusCategory;
+      if (validatedParams.isStale !== undefined) where.isStale = validatedParams.isStale;
+      if (validatedParams.projectCoordinatorId) where.projectCoordinatorId = validatedParams.projectCoordinatorId;
+      if (validatedParams.lastContactDateFrom || validatedParams.lastContactDateTo) {
+        where.lastContactDate = {};
+        if (validatedParams.lastContactDateFrom) (where.lastContactDate as any).gte = new Date(validatedParams.lastContactDateFrom);
+        if (validatedParams.lastContactDateTo) (where.lastContactDate as any).lte = new Date(validatedParams.lastContactDateTo);
+      }
+      // SLA violation filter: any due date < now
+      if (validatedParams.slaViolation !== undefined) {
+        const now = new Date();
+        const violationCondition = {
+          OR: [
+            { voicemailCallbackDue: { lt: now } },
+            { textResponseDue: { lt: now } },
+            { missedCallFollowupDue: { lt: now } },
+          ],
+        };
+        if (validatedParams.slaViolation) Object.assign(where, violationCondition);
+      }
+      return where;
+    };
 
-    if (validatedParams.department) {
-      where.department = { contains: validatedParams.department, mode: "insensitive" };
-    }
-
-    if (validatedParams.isFavorite !== undefined) {
-      where.isFavorite = validatedParams.isFavorite;
-    }
-
-    if (validatedParams.groupId) {
-      where.groups = {
-        some: {
-          groupId: validatedParams.groupId,
-        },
-      };
-    }
-
-    // Build orderBy clause
     const orderBy: any = {};
-    orderBy[validatedParams.sortBy] = validatedParams.sortOrder;
+    orderBy[sortFieldMap[validatedParams.sortBy] ?? "createdAt"] = validatedParams.sortOrder;
 
-    // Get contacts with pagination
-    const [contacts, total] = await Promise.all([
-      prisma.contact.findMany({
-        where,
-        include: {
-          groups: {
-            include: {
-              group: true,
+    const sectionType = validatedParams.sectionType ?? "ALL";
+
+    const fetchContacts = unstable_cache(async () => {
+      const [total, contacts] = await prisma.$transaction([
+        prisma.contact.count({ where: makeWhere() }),
+        prisma.contact.findMany({
+          where: makeWhere(),
+          orderBy,
+          skip: (validatedParams.page - 1) * validatedParams.limit,
+          take: validatedParams.limit,
+          include: {
+            projectCoordinator: {
+              select: { id: true, name: true, email: true, department: true },
+            },
+            lastContactByUser: {
+              select: { id: true, name: true, email: true },
+            },
+            groups: {
+              include: { group: true },
             },
           },
-        },
-        orderBy,
-        skip,
-        take: validatedParams.limit,
-      }),
-      prisma.contact.count({ where }),
-    ]);
+        }),
+      ]);
 
-    // Transform contacts to include group names
-    const transformedContacts = contacts.map((contact) => ({
-      ...contact,
-      groups: contact.groups.map((cg) => cg.group),
-    }));
+      const serialized = contacts.map((c: any) => ({
+        id: c.id,
+        organization: c.organization,
+        firstName: c.firstName,
+        lastName: c.lastName,
+        phone: c.phone,
+        email: c.email,
+        type: c.type,
+        department: c.department,
+        notes: c.notes,
+        tags: c.tags,
+        quickbaseId: c.quickbaseId,
+        isFavorite: c.isFavorite,
+        createdAt: c.createdAt,
+        updatedAt: c.updatedAt,
+        ownerId: c.ownerId,
+        groups: (c.groups || []).map((g: any) => g.group),
+        projectStatus: c.projectStatus,
+        statusCategory: c.statusCategory,
+        isStale: c.isStale,
+        lastContactDate: c.lastContactDate,
+        lastContactBy: c.lastContactBy,
+        lastContactByUser: c.lastContactByUser,
+        lastContactDepartment: c.lastContactDepartment,
+        lastContactType: c.lastContactType,
+        voicemailCallbackDue: c.voicemailCallbackDue,
+        textResponseDue: c.textResponseDue,
+        missedCallFollowupDue: c.missedCallFollowupDue,
+        unreadCount: c.unreadCount,
+        projectCoordinatorId: c.projectCoordinatorId,
+        projectCoordinator: c.projectCoordinator,
+      }));
+
+      return { total, contacts: serialized };
+    }, [
+      JSON.stringify({
+        ...searchParamsObj,
+      }),
+    ], { tags: ["contacts", String(sectionType)] });
+
+    const { total, contacts } = await fetchContacts();
 
     return NextResponse.json({
-      contacts: transformedContacts,
-      pagination: {
-        page: validatedParams.page,
-        limit: validatedParams.limit,
-        total,
-        pages: Math.ceil(total / validatedParams.limit),
-      },
+      contacts,
+      total,
+      page: validatedParams.page,
+      limit: validatedParams.limit,
+      totalPages: Math.ceil(total / validatedParams.limit),
+      sectionType: validatedParams.sectionType,
+      filters: {
+        projectStatus: validatedParams.projectStatus,
+        statusCategory: validatedParams.statusCategory,
+        isStale: validatedParams.isStale,
+        slaViolation: validatedParams.slaViolation,
+      }
     });
   } catch (error) {
-    console.error("Error fetching contacts:", error);
+    console.error('Error in /api/contacts:', error);
     return NextResponse.json(
       { error: "Failed to fetch contacts" },
       { status: 500 }
@@ -131,75 +197,49 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
+    // Validate the request body
     const validatedData = createContactSchema.parse(body);
 
-    // Create contact
-    let contact;
-    try {
-      contact = await prisma.contact.create({
-        data: {
-          ...validatedData,
-          ownerId: session.user.id,
-          tags: validatedData.tags || [],
-        },
-        include: {
-          groups: {
-            include: {
-              group: true,
-            },
-          },
-        },
-      });
-    } catch (e: any) {
-      // Map unique constraint error to HTTP 409
-      if (e?.code === "P2002") {
-        return NextResponse.json(
-          { error: "Contact with this phone number already exists" },
-          { status: 409 }
-        );
-      }
-      throw e;
-    }
-
-    // Add to groups if specified
-    if (validatedData.groupIds && validatedData.groupIds.length > 0) {
-      await prisma.contactGroupOnContact.createMany({
-        data: validatedData.groupIds.map((groupId) => ({
-          contactId: contact.id,
-          groupId,
-        })),
-      });
-
-      // Fetch updated contact with groups
-      const updatedContact = await prisma.contact.findUnique({
-        where: { id: contact.id },
-        include: {
-          groups: {
-            include: {
-              group: true,
-            },
-          },
-        },
-      });
-
-      return NextResponse.json({
-        ...updatedContact,
-        groups: updatedContact?.groups.map((cg) => cg.group) || [],
-      });
-    }
-
-    return NextResponse.json({
-      ...contact,
-      groups: contact.groups.map((cg) => cg.group),
+    const created = await prisma.contact.create({
+      data: {
+        organization: validatedData.organization,
+        firstName: validatedData.firstName,
+        lastName: validatedData.lastName,
+        phone: validatedData.phone,
+        email: validatedData.email || null,
+        type: validatedData.type as any,
+        department: validatedData.department || null,
+        notes: validatedData.notes || null,
+        tags: validatedData.tags || [],
+        quickbaseId: validatedData.quickbaseId || null,
+        isFavorite: validatedData.isFavorite ?? false,
+        projectStatus: validatedData.projectStatus as any,
+        lastContactDate: validatedData.lastContactDate ? new Date(validatedData.lastContactDate) : null,
+        lastContactBy: validatedData.lastContactBy || null,
+        lastContactDepartment: validatedData.lastContactDepartment || null,
+        lastContactType: validatedData.lastContactType || null,
+        voicemailCallbackDue: validatedData.voicemailCallbackDue ? new Date(validatedData.voicemailCallbackDue) : null,
+        textResponseDue: validatedData.textResponseDue ? new Date(validatedData.textResponseDue) : null,
+        missedCallFollowupDue: validatedData.missedCallFollowupDue ? new Date(validatedData.missedCallFollowupDue) : null,
+        unreadCount: validatedData.unreadCount ?? 0,
+        projectCoordinatorId: validatedData.projectCoordinatorId || null,
+      },
     });
+
+    revalidateTag('contacts');
+    if (created.type === 'CUSTOMER') revalidateTag('CUSTOMERS');
+
+    return NextResponse.json(created, { status: 201 });
   } catch (error) {
-    console.error("Error creating contact:", error);
-    if (error instanceof Error && error.name === "ZodError") {
+    console.error('Error creating contact:', error);
+    
+    if (error instanceof Error && error.name === 'ZodError') {
       return NextResponse.json(
-        { error: "Invalid input data", details: error.message },
+        { error: "Invalid contact data", details: error.message },
         { status: 400 }
       );
     }
+    
     return NextResponse.json(
       { error: "Failed to create contact" },
       { status: 500 }

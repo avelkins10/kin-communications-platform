@@ -27,6 +27,7 @@
 ### Records
 - **POST** `/records/query` - Query records
   - Body: `{ from, select, where, sortBy, options }`
+  - Example: `{ "from": "tableId", "select": [1, 2, 3], "where": "{rid.EX.'123'}", "options": { "top": 1 } }`
 - **POST** `/records` - Create records
   - Body: `{ to, data: [{ fid_1: value, fid_2: value }] }`
 - **POST** `/records` - Update records
@@ -35,6 +36,7 @@
   - Body: `{ to, data, mergeFieldId }`
 - **DELETE** `/records` - Delete records
   - Body: `{ from, where }`
+  - Example: `{ "from": "tableId", "where": "{rid.EX.'123'}" }`
 
 ### Files
 - **POST** `/files` - Upload file

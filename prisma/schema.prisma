@@ -1,152 +1,681 @@
-// Datasource
+generator client {
+  provider = "prisma-client-js"
+}
+
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-// Generator
-generator client {
-  provider = "prisma-client-js"
+model Account {
+  id                String  @id
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  User              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
 }
 
-// Core Models
-model User {
-  id            String    @id @default(cuid())
-  email         String    @unique
-  name          String?
-  passwordHash  String?
-  image         String?
-  role          String     @default("user")
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  contacts      Contact[]
-  calls         Call[]     @relation("UserCalls")
-  messages      Message[]  @relation("UserMessages")
-  sessions      Session[]
-  accounts      Account[]
-}
+model Activity {
+  id                String   @id
+  twilioActivitySid String   @unique
+  friendlyName      String
+  available         Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime
+  workers           Worker[] @relation("WorkerActivity")
 
-model Contact {
-  id           String      @id @default(cuid())
-  organization String?
-  firstName    String
-  lastName     String
-  phone        String      @db.VarChar(32)
-  email        String?
-  type         ContactType @default(CUSTOMER)
-  department   String?
-  notes        String?     @db.Text
-  tags         String[]
-  quickbaseId  String?
-  isFavorite   Boolean     @default(false)
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
-  ownerId      String?
-  owner        User?       @relation(fields: [ownerId], references: [id])
-  groups       ContactGroupOnContact[]
-  calls        Call[]
-  messages     Message[]
-
-  @@index([phone])
-  @@index([email])
-  @@index([type])
-  @@index([isFavorite])
-  @@index([quickbaseId])
-  @@index([department])
-  // Duplicate phone strategy: enforce uniqueness per owner at the DB level
-  @@unique([ownerId, phone])
+  @@index([available, friendlyName])
+  @@index([available])
+  @@index([createdAt])
+  @@index([twilioActivitySid])
+  @@index([updatedAt])
 }
 
 model Call {
-  id            String    @id @default(cuid())
+  id            String        @id
   direction     CallDirection
-  status        CallStatus @default(PENDING)
+  status        CallStatus    @default(PENDING)
   fromNumber    String
   toNumber      String
-  startedAt     DateTime? 
-  endedAt       DateTime? 
-  durationSec   Int?      
+  startedAt     DateTime?
+  endedAt       DateTime?
+  durationSec   Int?
   recordingUrl  String?
-  twilioCallSid String?   @unique
+  twilioCallSid String?       @unique
   recordingSid  String?
-  transcription String?   @db.Text
-  userId        String?
-  user          User?     @relation("UserCalls", fields: [userId], references: [id])
-  contactId     String?
-  contact       Contact?  @relation(fields: [contactId], references: [id])
-  voicemail     Voicemail?
-  createdAt     DateTime  @default(now())
-
-  @@index([userId])
-  @@index([contactId])
-  @@index([fromNumber])
-  @@index([toNumber])
-  @@index([twilioCallSid])
-  @@index([recordingSid])
-}
-
-model Message {
-  id            String    @id @default(cuid())
-  direction     MessageDirection
-  status        MessageStatus @default(QUEUED)
-  fromNumber    String
-  toNumber      String
-  body          String
-  mediaUrl      String?
-  sentAt        DateTime?
-  deliveredAt   DateTime?
-  readAt        DateTime?
-  userId        String?
-  user          User?     @relation("UserMessages", fields: [userId], references: [id])
-  contactId     String?
-  contact       Contact?  @relation(fields: [contactId], references: [id])
-  createdAt     DateTime  @default(now())
-
-  @@index([userId])
-  @@index([contactId])
-}
-
-model Voicemail {
-  id           String   @id @default(cuid())
-  callId       String   @unique
-  call         Call     @relation(fields: [callId], references: [id])
   transcription String?
-  audioUrl      String
-  createdAt     DateTime @default(now())
+  userId        String?
+  contactId     String?
+  phoneNumberId String?
+  taskId        String?       @unique
+  createdAt     DateTime      @default(now())
+  Contact       Contact?      @relation(fields: [contactId], references: [id])
+  PhoneNumber   PhoneNumber?  @relation(fields: [phoneNumberId], references: [id])
+  User          User?         @relation(fields: [userId], references: [id])
+  Task          Task?
+  Voicemail     Voicemail?
+
+  @@index([contactId, direction, endedAt])
+  @@index([contactId, direction, fromNumber])
+  @@index([contactId, direction])
+  @@index([contactId, direction, startedAt, endedAt])
+  @@index([contactId, direction, startedAt])
+  @@index([contactId, direction, toNumber])
+  @@index([contactId, endedAt])
+  @@index([contactId, fromNumber, endedAt])
+  @@index([contactId, fromNumber])
+  @@index([contactId, fromNumber, startedAt])
+  @@index([contactId, fromNumber, toNumber])
+  @@index([contactId])
+  @@index([contactId, startedAt])
+  @@index([contactId, status, direction])
+  @@index([contactId, status, direction, startedAt])
+  @@index([contactId, status, endedAt])
+  @@index([contactId, status, fromNumber])
+  @@index([contactId, status])
+  @@index([contactId, status, startedAt])
+  @@index([contactId, status, toNumber])
+  @@index([contactId, toNumber, endedAt])
+  @@index([contactId, toNumber])
+  @@index([contactId, toNumber, startedAt])
+  @@index([createdAt, direction])
+  @@index([createdAt])
+  @@index([createdAt, status])
+  @@index([direction])
+  @@index([direction, status])
+  @@index([endedAt, direction])
+  @@index([endedAt])
+  @@index([endedAt, status])
+  @@index([fromNumber])
+  @@index([fromNumber, status])
+  @@index([fromNumber, toNumber])
+  @@index([taskId])
+  @@index([phoneNumberId])
+  @@index([recordingSid])
+  @@index([startedAt, direction])
+  @@index([startedAt])
+  @@index([startedAt, status])
+  @@index([status, direction])
+  @@index([status])
+  @@index([status, startedAt, endedAt])
+  @@index([toNumber])
+  @@index([toNumber, status])
+  @@index([twilioCallSid])
+  @@index([userId, createdAt])
+  @@index([userId, direction, endedAt])
+  @@index([userId, direction, fromNumber])
+  @@index([userId, direction])
+  @@index([userId, direction, startedAt, endedAt])
+  @@index([userId, direction, startedAt])
+  @@index([userId, direction, toNumber])
+  @@index([userId, endedAt])
+  @@index([userId, fromNumber, endedAt])
+  @@index([userId, fromNumber])
+  @@index([userId, fromNumber, startedAt])
+  @@index([userId, fromNumber, toNumber])
+  @@index([userId])
+  @@index([userId, startedAt])
+  @@index([userId, status, direction])
+  @@index([userId, status, direction, startedAt])
+  @@index([userId, status, endedAt])
+  @@index([userId, status, fromNumber])
+  @@index([userId, status])
+  @@index([userId, status, startedAt])
+  @@index([userId, status, toNumber])
+  @@index([userId, toNumber, endedAt])
+  @@index([userId, toNumber])
+  @@index([userId, toNumber, startedAt])
 }
 
-model RoutingRule {
-  id          String   @id @default(cuid())
-  name        String
-  priority    Int      @default(0)
-  matchType   String   // e.g., number_prefix, skill, schedule
-  matchValue  String
-  action      String   // e.g., route_to_user, route_to_group, voicemail
-  actionValue String?
-  enabled     Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+model Contact {
+  id                                      String                  @id
+  organization                            String?
+  firstName                               String
+  lastName                                String
+  phone                                   String                  @db.VarChar(32)
+  email                                   String?
+  type                                    ContactType             @default(CUSTOMER)
+  department                              String?
+  notes                                   String?
+  tags                                    String[]
+  quickbaseId                             String?
+  isFavorite                              Boolean                 @default(false)
+  createdAt                               DateTime                @default(now())
+  updatedAt                               DateTime
+  ownerId                                 String?
+  projectStatus                           ProjectStatus?
+  statusCategory                          StatusCategory          @default(ACTIVE)
+  isStale                                 Boolean                 @default(false)
+  isAvailable                             Boolean                 @default(true)
+  lastContactDate                         DateTime?
+  lastContactBy                           String?
+  lastContactDepartment                   String?
+  lastContactType                         String?
+  voicemailCallbackDue                    DateTime?
+  textResponseDue                         DateTime?
+  missedCallFollowupDue                   DateTime?
+  unreadCount                             Int                     @default(0)
+  projectCoordinatorId                    String?
+  Call                                    Call[]
+  User_Contact_lastContactByToUser        User?                   @relation("Contact_lastContactByToUser", fields: [lastContactBy], references: [id])
+  User_Contact_ownerIdToUser              User?                   @relation("Contact_ownerIdToUser", fields: [ownerId], references: [id])
+  User_Contact_projectCoordinatorIdToUser User?                   @relation("Contact_projectCoordinatorIdToUser", fields: [projectCoordinatorId], references: [id])
+  ContactGroupOnContact                   ContactGroupOnContact[]
+  Message                                 Message[]
+  Voicemail                               Voicemail[]
+
+  @@unique([ownerId, phone])
+  @@index([createdAt])
+  @@index([createdAt, ownerId])
+  @@index([department])
+  @@index([email])
+  @@index([firstName, lastName])
+  @@index([isAvailable])
+  @@index([isFavorite])
+  @@index([isStale])
+  @@index([lastContactBy])
+  @@index([lastContactDate])
+  @@index([lastContactDate, statusCategory])
+  @@index([lastContactDepartment])
+  @@index([lastContactType])
+  @@index([missedCallFollowupDue])
+  @@index([organization])
+  @@index([ownerId, department])
+  @@index([ownerId])
+  @@index([ownerId, isAvailable])
+  @@index([ownerId, isFavorite])
+  @@index([ownerId, isStale])
+  @@index([ownerId, lastContactDate])
+  @@index([ownerId, phone])
+  @@index([ownerId, projectCoordinatorId])
+  @@index([ownerId, projectStatus])
+  @@index([ownerId, statusCategory])
+  @@index([ownerId, type])
+  @@index([phone])
+  @@index([phone, ownerId])
+  @@index([projectCoordinatorId])
+  @@index([projectCoordinatorId, type])
+  @@index([projectStatus])
+  @@index([projectStatus, statusCategory])
+  @@index([quickbaseId])
+  @@index([statusCategory])
+  @@index([statusCategory, isStale])
+  @@index([tags])
+  @@index([textResponseDue])
+  @@index([type, department])
+  @@index([type])
+  @@index([type, isAvailable])
+  @@index([type, isStale])
+  @@index([type, statusCategory])
+  @@index([unreadCount])
+  @@index([updatedAt])
+  @@index([voicemailCallbackDue])
+}
+
+model ContactConfiguration {
+  id             String   @id
+  name           String   @unique
+  description    String?
+  stalenessRules Json
+  statusMappings Json
+  slaSettings    Json
+  isActive       Boolean  @default(true)
+  createdBy      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime
+  User           User?    @relation(fields: [createdBy], references: [id])
+
+  @@index([createdAt])
+  @@index([createdBy])
+  @@index([isActive])
+  @@index([name])
+  @@index([updatedAt])
 }
 
 model ContactGroup {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  members     ContactGroupOnContact[]
+  id                    String                  @id
+  name                  String
+  description           String?
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime
+  ContactGroupOnContact ContactGroupOnContact[]
 }
 
 model ContactGroupOnContact {
-  contactId String
-  groupId   String
-  contact   Contact     @relation(fields: [contactId], references: [id])
-  group     ContactGroup @relation(fields: [groupId], references: [id])
+  contactId    String
+  groupId      String
+  Contact      Contact      @relation(fields: [contactId], references: [id])
+  ContactGroup ContactGroup @relation(fields: [groupId], references: [id])
 
   @@id([contactId, groupId])
 }
 
-// Enums
+model Message {
+  id               String           @id
+  direction        MessageDirection
+  status           MessageStatus    @default(QUEUED)
+  fromNumber       String
+  toNumber         String
+  body             String
+  mediaUrl         String?
+  mediaUrls        String[]
+  sentAt           DateTime?
+  deliveredAt      DateTime?
+  readAt           DateTime?
+  twilioMessageSid String?          @unique
+  conversationSid  String?
+  errorCode        String?
+  errorMessage     String?
+  numSegments      Int?
+  price            String?
+  priceUnit        String?
+  userId           String?
+  contactId        String?
+  phoneNumberId    String?
+  templateId       String?
+  createdAt        DateTime         @default(now())
+  Contact          Contact?         @relation(fields: [contactId], references: [id])
+  PhoneNumber      PhoneNumber?     @relation(fields: [phoneNumberId], references: [id])
+  MessageTemplate  MessageTemplate? @relation(fields: [templateId], references: [id])
+  User             User?            @relation(fields: [userId], references: [id])
+  Task             Task?
+
+  @@index([contactId, createdAt])
+  @@index([contactId, direction])
+  @@index([contactId, direction, status])
+  @@index([contactId])
+  @@index([contactId, status])
+  @@index([conversationSid])
+  @@index([createdAt])
+  @@index([deliveredAt])
+  @@index([direction])
+  @@index([direction, status])
+  @@index([fromNumber])
+  @@index([fromNumber, toNumber])
+  @@index([phoneNumberId])
+  @@index([readAt])
+  @@index([sentAt])
+  @@index([status, createdAt])
+  @@index([status])
+  @@index([templateId])
+  @@index([toNumber])
+  @@index([twilioMessageSid])
+  @@index([userId, createdAt])
+  @@index([userId, direction])
+  @@index([userId, direction, status])
+  @@index([userId])
+  @@index([userId, status])
+}
+
+model MessageTemplate {
+  id         String           @id
+  name       String
+  body       String
+  category   TemplateCategory @default(SUPPORT)
+  variables  String[]
+  isShared   Boolean          @default(false)
+  usageCount Int              @default(0)
+  userId     String?
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime
+  Message    Message[]
+  User       User?            @relation(fields: [userId], references: [id])
+
+  @@index([category])
+  @@index([createdAt])
+  @@index([isShared, category])
+  @@index([isShared])
+  @@index([name])
+  @@index([updatedAt])
+  @@index([usageCount])
+  @@index([userId, category])
+  @@index([userId])
+}
+
+model PhoneNumber {
+  id                   String    @id
+  sid                  String?   @unique
+  phoneNumber          String    @unique
+  friendlyName         String?
+  capabilities         String[]
+  status               String    @default("active")
+  voiceUrl             String?
+  smsUrl               String?
+  statusCallback       String?
+  voiceMethod          String    @default("POST")
+  smsMethod            String    @default("POST")
+  statusCallbackMethod String    @default("POST")
+  userId               String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime
+  Call                 Call[]
+  Message              Message[]
+  User                 User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  IVRMenu              IVRMenu[]
+
+  @@index([createdAt])
+  @@index([phoneNumber])
+  @@index([sid])
+  @@index([status])
+  @@index([updatedAt])
+  @@index([userId])
+  @@index([userId, status])
+}
+
+model Reservation {
+  id                   String            @id
+  twilioReservationSid String            @unique
+  taskId               String
+  workerId             String
+  status               ReservationStatus @default(PENDING)
+  acceptedAt           DateTime?
+  rejectedAt           DateTime?
+  timeoutAt            DateTime?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime
+  Task                 Task              @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  Worker               Worker            @relation(fields: [workerId], references: [id], onDelete: Cascade)
+
+  @@index([acceptedAt])
+  @@index([createdAt])
+  @@index([rejectedAt])
+  @@index([status, createdAt])
+  @@index([status])
+  @@index([taskId])
+  @@index([taskId, status])
+  @@index([timeoutAt])
+  @@index([twilioReservationSid])
+  @@index([updatedAt])
+  @@index([workerId])
+  @@index([workerId, status])
+}
+
+model RoutingRule {
+  id          String    @id
+  name        String
+  description String?
+  priority    Int       @default(0)
+  enabled     Boolean   @default(true)
+  conditions  Json
+  actions     Json
+  workflowSid String?
+  queueSid    String?
+  workflowId  String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime
+  Workflow    Workflow? @relation(fields: [workflowId], references: [id])
+
+  @@index([createdAt])
+  @@index([enabled])
+  @@index([enabled, priority])
+  @@index([priority])
+  @@index([updatedAt])
+  @@index([workflowSid, enabled])
+  @@index([workflowSid])
+}
+
+model Session {
+  id           String   @id
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  User         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([expires])
+  @@index([sessionToken])
+  @@index([userId])
+}
+
+model Task {
+  id               String        @id
+  twilioTaskSid    String        @unique
+  taskQueueSid     String?
+  workflowSid      String?
+  attributes       Json
+  priority         Int           @default(0)
+  assignmentStatus TaskStatus    @default(PENDING)
+  workerId         String?
+  callId           String?       @unique
+  messageId        String?       @unique
+  taskQueueId      String?
+  workflowId       String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime
+  Reservation      Reservation[]
+  Call             Call?         @relation(fields: [callId], references: [id])
+  Message          Message?      @relation(fields: [messageId], references: [id])
+  TaskQueue        TaskQueue?    @relation(fields: [taskQueueId], references: [id])
+  Worker           Worker?       @relation(fields: [workerId], references: [id])
+  Workflow         Workflow?     @relation(fields: [workflowId], references: [id])
+
+  @@index([assignmentStatus])
+  @@index([assignmentStatus, priority])
+  @@index([callId])
+  @@index([createdAt])
+  @@index([messageId])
+  @@index([priority])
+  @@index([taskQueueSid, assignmentStatus])
+  @@index([taskQueueSid])
+  @@index([twilioTaskSid])
+  @@index([updatedAt])
+  @@index([workerId, assignmentStatus])
+  @@index([workerId])
+  @@index([workflowSid, assignmentStatus])
+  @@index([workflowSid])
+}
+
+model TaskQueue {
+  id                 String    @id
+  twilioTaskQueueSid String    @unique
+  friendlyName       String
+  targetWorkers      String?
+  maxReservedWorkers Int       @default(1)
+  taskOrder          TaskOrder @default(FIFO)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime
+  Task               Task[]
+
+  @@index([createdAt])
+  @@index([friendlyName])
+  @@index([taskOrder])
+  @@index([twilioTaskQueueSid])
+  @@index([updatedAt])
+}
+
+model User {
+  id                                         String                 @id
+  email                                      String                 @unique
+  name                                       String?
+  passwordHash                               String?
+  image                                      String?
+  role                                       String                 @default("user")
+  createdAt                                  DateTime               @default(now())
+  updatedAt                                  DateTime
+  twilioWorkerSid                            String?                @unique
+  skills                                     String[]
+  department                                 String?
+  quickbaseUserId                            String?                @unique
+  Account                                    Account[]
+  Call                                       Call[]
+  Contact_Contact_lastContactByToUser        Contact[]              @relation("Contact_lastContactByToUser")
+  Contact_Contact_ownerIdToUser              Contact[]              @relation("Contact_ownerIdToUser")
+  Contact_Contact_projectCoordinatorIdToUser Contact[]              @relation("Contact_projectCoordinatorIdToUser")
+  ContactConfiguration                       ContactConfiguration[]
+  Message                                    Message[]
+  MessageTemplate                            MessageTemplate[]
+  PhoneNumber                                PhoneNumber[]
+  Session                                    Session[]
+  Voicemail                                  Voicemail[]
+  Worker                                     Worker?
+  BusinessHoursConfig                        BusinessHoursConfig[]
+  IVRMenu                                    IVRMenu[]
+  SystemSettings                             SystemSettings[]
+
+  @@index([createdAt])
+  @@index([department])
+  @@index([email])
+  @@index([quickbaseUserId])
+  @@index([twilioWorkerSid])
+  @@index([updatedAt])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Voicemail {
+  id            String            @id
+  callId        String            @unique
+  transcription String?
+  audioUrl      String
+  assignedToId  String?
+  fromNumber    String
+  duration      Int?
+  contactId     String?
+  emailSent     Boolean           @default(false)
+  priority      VoicemailPriority @default(NORMAL)
+  notes         String?
+  readAt        DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime
+  User          User?             @relation(fields: [assignedToId], references: [id])
+  Call          Call              @relation(fields: [callId], references: [id])
+  Contact       Contact?          @relation(fields: [contactId], references: [id])
+
+  @@index([assignedToId])
+  @@index([assignedToId, priority])
+  @@index([assignedToId, readAt])
+  @@index([contactId])
+  @@index([createdAt])
+  @@index([emailSent, createdAt])
+  @@index([emailSent])
+  @@index([fromNumber])
+  @@index([priority, createdAt])
+  @@index([priority])
+  @@index([readAt])
+  @@index([updatedAt])
+}
+
+model WebhookLog {
+  id        String   @id
+  webhookId String   @unique
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([webhookId])
+}
+
+model Worker {
+  id              String        @id
+  twilioWorkerSid String        @unique
+  userId          String        @unique
+  friendlyName    String
+  attributes      Json
+  activitySid     String?
+  available       Boolean       @default(true)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime
+  Reservation     Reservation[]
+  Task            Task[]
+  User            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activity        Activity?     @relation("WorkerActivity", fields: [activitySid], references: [twilioActivitySid])
+
+  @@index([activitySid])
+  @@index([available, activitySid])
+  @@index([available])
+  @@index([createdAt])
+  @@index([twilioWorkerSid])
+  @@index([updatedAt])
+  @@index([userId])
+}
+
+model Workflow {
+  id                String        @id
+  twilioWorkflowSid String        @unique
+  friendlyName      String
+  configuration     Json
+  taskTimeout       Int           @default(300)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime
+  RoutingRule       RoutingRule[]
+  Task              Task[]
+
+  @@index([createdAt])
+  @@index([friendlyName])
+  @@index([taskTimeout])
+  @@index([twilioWorkflowSid])
+  @@index([updatedAt])
+}
+
+model BusinessHoursConfig {
+  id             String   @id @default(cuid())
+  name           String   @unique
+  timezone       String   @default("America/New_York")
+  weeklySchedule Json
+  holidays       Json
+  specialHours   Json
+  isActive       Boolean  @default(true)
+  createdBy      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  User           User?    @relation(fields: [createdBy], references: [id])
+
+  @@index([isActive])
+  @@index([createdBy])
+  @@index([createdAt])
+}
+
+model IVRMenu {
+  id            String       @id @default(cuid())
+  name          String       @unique
+  description   String?
+  greeting      String
+  options       Json
+  timeout       Int          @default(5)
+  maxRetries    Int          @default(3)
+  defaultAction Json
+  isActive      Boolean      @default(true)
+  phoneNumberId String?
+  createdBy     String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  PhoneNumber   PhoneNumber? @relation(fields: [phoneNumberId], references: [id])
+  User          User?        @relation(fields: [createdBy], references: [id])
+
+  @@index([isActive])
+  @@index([phoneNumberId])
+  @@index([createdBy])
+  @@index([createdAt])
+}
+
+model SystemSettings {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     Json
+  category  String   @default("general")
+  updatedBy String?
+  updatedAt DateTime @updatedAt
+  User      User?    @relation(fields: [updatedBy], references: [id])
+
+  @@index([category])
+  @@index([key])
+}
+
 enum CallDirection {
   INBOUND
   OUTBOUND
@@ -162,6 +691,13 @@ enum CallStatus {
   VOICEMAIL
 }
 
+enum ContactType {
+  CUSTOMER
+  FIELD_CREW
+  SALES_REP
+  VENDOR
+}
+
 enum MessageDirection {
   INBOUND
   OUTBOUND
@@ -173,59 +709,54 @@ enum MessageStatus {
   DELIVERED
   READ
   FAILED
+  UNDELIVERED
+  RECEIVED
 }
 
-enum ContactType {
-  CUSTOMER
+enum ProjectStatus {
+  PRE_PTO
+  POST_PTO
+}
+
+enum ReservationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  TIMEOUT
+  CANCELED
+}
+
+enum StatusCategory {
+  ACTIVE
+  INACTIVE
+}
+
+enum TaskOrder {
+  FIFO
+  LIFO
+}
+
+enum TaskStatus {
+  PENDING
+  ASSIGNED
+  RESERVED
+  ACCEPTED
+  COMPLETED
+  CANCELED
+  TIMEOUT
+}
+
+enum TemplateCategory {
+  SUPPORT
+  SALES
+  SCHEDULING
   FIELD_CREW
-  SALES_REP
-  VENDOR
+  GENERAL
 }
 
-// NextAuth.js Adapter Models
-model Account {
-  id                String  @id @default(cuid())
-  userId            String
-  type              String
-  provider          String
-  providerAccountId String
-  refresh_token     String? @db.Text
-  access_token      String? @db.Text
-  expires_at        Int?
-  token_type        String?
-  scope             String?
-  id_token          String? @db.Text
-  session_state     String?
-  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([provider, providerAccountId])
-  @@index([userId])
+enum VoicemailPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
 }
-
-model Session {
-  id           String   @id @default(cuid())
-  sessionToken String   @unique
-  userId       String
-  expires      DateTime
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-}
-
-model VerificationToken {
-  identifier String
-  token      String   @unique
-  expires    DateTime
-
-  @@unique([identifier, token])
-}
-
-model WebhookLog {
-  id        String   @id @default(cuid())
-  webhookId String   @unique
-  createdAt DateTime @default(now())
-
-  @@index([webhookId])
-}
-
-

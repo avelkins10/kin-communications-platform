@@ -7,7 +7,7 @@ Build a unified communications platform for KIN company. 20-30 employees manage 
 ### TECHNOLOGY STACK
 - **Frontend**: Next.js 14, TypeScript, Tailwind CSS, shadcn/ui components
 - **Backend**: Node.js, Express (for Twilio webhooks)
-- **Database**: PostgreSQL (Neon), Redis for caching
+- **Database**: PostgreSQL (Neon) with Next.js caching
 - **Telephony**: Twilio TaskRouter, Programmable Voice, Programmable Messaging
 - **Storage**: AWS S3 or Twilio Storage for recordings
 - **CRM**: Quickbase (existing system - read/write via API)
@@ -91,7 +91,7 @@ Build a unified communications platform for KIN company. 20-30 employees manage 
 #### Admin Configuration Panel
 - Add/remove users and sync with Twilio Workers
 - Buy/configure/release phone numbers
-- Visual routing rule builder (drag and drop)
+- Basic IVR configuration (change prompts and menu options)
 - Business hours configuration
 - Holiday schedule management
 - IVR menu designer (without code)
@@ -390,7 +390,7 @@ typescript
 // Admin Components
 - UserManagement (CRUD for employees)
 - PhoneNumberManager (buy, configure, release)
-- RoutingRuleBuilder (drag-drop interface)
+- RoutingRuleBuilder (Bsaic IVR congiguration, change prompts and menu options)
 - BusinessHoursEditor (weekly schedule)
 - IVRDesigner (visual menu builder)
 FILE STRUCTURE
@@ -426,7 +426,7 @@ kin-platform/
 │   ├── lib/
 │   │   ├── twilio/
 │   │   ├── quickbase/
-│   │   ├── redis/
+│   │   ├── cache/
 │   │   └── db.ts
 │   ├── types/
 │   └── utils/

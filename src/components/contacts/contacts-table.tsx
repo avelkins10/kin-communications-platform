@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { Contact, ContactType } from "@/types/index";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table,
   TableBody,
@@ -12,7 +13,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Phone, MessageSquare, Edit, Trash2, Star } from "lucide-react";
+import { BulkActions, BulkAction, commonBulkActions } from "@/components/ui/bulk-actions";
+import { Phone, MessageSquare, Edit, Trash2, Star, Download, Users } from "lucide-react";
 
 interface ContactsTableProps {
   contacts: Contact[];
@@ -21,6 +23,10 @@ interface ContactsTableProps {
   onCall: (contact: Contact) => void;
   onSms: (contact: Contact) => void;
   onToggleFavorite: (contact: Contact) => void;
+  onBulkDelete?: (contactIds: string[]) => Promise<void>;
+  onBulkAssignGroup?: (contactIds: string[], groupId: string) => Promise<void>;
+  onBulkToggleFavorite?: (contactIds: string[]) => Promise<void>;
+  onBulkExport?: (contactIds: string[]) => Promise<void>;
   loading?: boolean;
 }
 
@@ -45,10 +51,15 @@ export function ContactsTable({
   onCall,
   onSms,
   onToggleFavorite,
+  onBulkDelete,
+  onBulkAssignGroup,
+  onBulkToggleFavorite,
+  onBulkExport,
   loading = false,
 }: ContactsTableProps) {
   const [sortField, setSortField] = useState<keyof Contact>("createdAt");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [selectedContacts, setSelectedContacts] = useState<Set<string>>(new Set());
 
   const handleSort = (field: keyof Contact) => {
     if (sortField === field) {
@@ -58,6 +69,75 @@ export function ContactsTable({
       setSortOrder("asc");
     }
   };
+
+  // Selection handlers
+  const handleSelectAll = useCallback(() => {
+    setSelectedContacts(new Set(contacts.map(contact => contact.id)));
+  }, [contacts]);
+
+  const handleClearSelection = useCallback(() => {
+    setSelectedContacts(new Set());
+  }, []);
+
+  const handleSelectionChange = useCallback((selectedItems: string[]) => {
+    setSelectedContacts(new Set(selectedItems));
+  }, []);
+
+  const handleContactSelect = useCallback((contactId: string, selected: boolean) => {
+    const newSelection = new Set(selectedContacts);
+    if (selected) {
+      newSelection.add(contactId);
+    } else {
+      newSelection.delete(contactId);
+    }
+    setSelectedContacts(newSelection);
+  }, [selectedContacts]);
+
+  // Bulk action handlers
+  const handleBulkDelete = useCallback(async (contactIds: string[]) => {
+    if (onBulkDelete) {
+      await onBulkDelete(contactIds);
+    }
+  }, [onBulkDelete]);
+
+  const handleBulkToggleFavorite = useCallback(async (contactIds: string[]) => {
+    if (onBulkToggleFavorite) {
+      await onBulkToggleFavorite(contactIds);
+    }
+  }, [onBulkToggleFavorite]);
+
+  const handleBulkExport = useCallback(async (contactIds: string[]) => {
+    if (onBulkExport) {
+      await onBulkExport(contactIds);
+    }
+  }, [onBulkExport]);
+
+  const handleBulkAssignGroup = useCallback(async (contactIds: string[]) => {
+    if (onBulkAssignGroup) {
+      // For now, we'll use a default group - this could be enhanced with a dialog
+      await onBulkAssignGroup(contactIds, 'default-group');
+    }
+  }, [onBulkAssignGroup]);
+
+  // Bulk actions configuration
+  const bulkActions: BulkAction[] = [
+    ...(onBulkDelete ? [commonBulkActions.delete(handleBulkDelete)] : []),
+    ...(onBulkToggleFavorite ? [{
+      id: 'toggle-favorite',
+      label: 'Toggle Favorite',
+      icon: <Star className="h-4 w-4" />,
+      variant: 'outline' as const,
+      onClick: handleBulkToggleFavorite,
+    }] : []),
+    ...(onBulkAssignGroup ? [{
+      id: 'assign-group',
+      label: 'Assign to Group',
+      icon: <Users className="h-4 w-4" />,
+      variant: 'outline' as const,
+      onClick: handleBulkAssignGroup,
+    }] : []),
+    ...(onBulkExport ? [commonBulkActions.export(handleBulkExport)] : []),
+  ];
 
   const sortedContacts = [...contacts].sort((a, b) => {
     const aValue = a[sortField];
@@ -91,6 +171,7 @@ export function ContactsTable({
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-12"></TableHead>
               <TableHead>Name</TableHead>
               <TableHead>Phone</TableHead>
               <TableHead>Email</TableHead>
@@ -102,6 +183,7 @@ export function ContactsTable({
           <TableBody>
             {Array.from({ length: 5 }).map((_, i) => (
               <TableRow key={i}>
+                <TableCell className="animate-pulse bg-gray-200 h-4"></TableCell>
                 <TableCell className="animate-pulse bg-gray-200 h-4"></TableCell>
                 <TableCell className="animate-pulse bg-gray-200 h-4"></TableCell>
                 <TableCell className="animate-pulse bg-gray-200 h-4"></TableCell>
@@ -128,9 +210,30 @@ export function ContactsTable({
 
   return (
     <div className="rounded-md border">
+      <BulkActions
+        selectedItems={Array.from(selectedContacts)}
+        totalItems={contacts.length}
+        actions={bulkActions}
+        onSelectionChange={handleSelectionChange}
+        onSelectAll={handleSelectAll}
+        onClearSelection={handleClearSelection}
+        isLoading={loading}
+      />
       <Table>
         <TableHeader>
           <TableRow>
+            <TableHead className="w-12">
+              <Checkbox
+                checked={selectedContacts.size === contacts.length && contacts.length > 0}
+                ref={(el) => {
+                  if (el) {
+                    el.indeterminate = selectedContacts.size > 0 && selectedContacts.size < contacts.length;
+                  }
+                }}
+                onCheckedChange={handleSelectAll}
+                disabled={loading}
+              />
+            </TableHead>
             <TableHead 
               className="cursor-pointer hover:bg-gray-50"
               onClick={() => handleSort("firstName")}
@@ -182,6 +285,13 @@ export function ContactsTable({
         <TableBody>
           {sortedContacts.map((contact) => (
             <TableRow key={contact.id}>
+              <TableCell>
+                <Checkbox
+                  checked={selectedContacts.has(contact.id)}
+                  onCheckedChange={(checked) => handleContactSelect(contact.id, !!checked)}
+                  disabled={loading}
+                />
+              </TableCell>
               <TableCell>
                 <div className="flex items-center gap-2">
                   <span className="font-medium">

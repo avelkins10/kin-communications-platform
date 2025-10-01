@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { Call, CallDirection, CallStatus } from "@/types/index";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table,
   TableBody,
@@ -12,12 +13,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Phone, Play, Eye, ArrowUpRight, ArrowDownLeft } from "lucide-react";
+import { BulkActions, BulkAction, commonBulkActions } from "@/components/ui/bulk-actions";
+import { Phone, Play, Eye, ArrowUpRight, ArrowDownLeft, Download, CheckCircle } from "lucide-react";
 
 interface CallsTableProps {
   calls: Call[];
   onPlayRecording: (call: Call) => void;
   onViewDetails: (call: Call) => void;
+  onBulkDelete?: (callIds: string[]) => Promise<void>;
+  onBulkDownloadRecordings?: (callIds: string[]) => Promise<void>;
+  onBulkMarkReviewed?: (callIds: string[]) => Promise<void>;
   loading?: boolean;
 }
 
@@ -55,10 +60,14 @@ export function CallsTable({
   calls,
   onPlayRecording,
   onViewDetails,
+  onBulkDelete,
+  onBulkDownloadRecordings,
+  onBulkMarkReviewed,
   loading = false,
 }: CallsTableProps) {
   const [sortField, setSortField] = useState<keyof Call>("createdAt");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [selectedCalls, setSelectedCalls] = useState<Set<string>>(new Set());
 
   const handleSort = (field: keyof Call) => {
     if (sortField === field) {
@@ -68,6 +77,67 @@ export function CallsTable({
       setSortOrder("asc");
     }
   };
+
+  // Selection handlers
+  const handleSelectAll = useCallback(() => {
+    setSelectedCalls(new Set(calls.map(call => call.id)));
+  }, [calls]);
+
+  const handleClearSelection = useCallback(() => {
+    setSelectedCalls(new Set());
+  }, []);
+
+  const handleSelectionChange = useCallback((selectedItems: string[]) => {
+    setSelectedCalls(new Set(selectedItems));
+  }, []);
+
+  const handleCallSelect = useCallback((callId: string, selected: boolean) => {
+    const newSelection = new Set(selectedCalls);
+    if (selected) {
+      newSelection.add(callId);
+    } else {
+      newSelection.delete(callId);
+    }
+    setSelectedCalls(newSelection);
+  }, [selectedCalls]);
+
+  // Bulk action handlers
+  const handleBulkDelete = useCallback(async (callIds: string[]) => {
+    if (onBulkDelete) {
+      await onBulkDelete(callIds);
+    }
+  }, [onBulkDelete]);
+
+  const handleBulkDownloadRecordings = useCallback(async (callIds: string[]) => {
+    if (onBulkDownloadRecordings) {
+      await onBulkDownloadRecordings(callIds);
+    }
+  }, [onBulkDownloadRecordings]);
+
+  const handleBulkMarkReviewed = useCallback(async (callIds: string[]) => {
+    if (onBulkMarkReviewed) {
+      await onBulkMarkReviewed(callIds);
+    }
+  }, [onBulkMarkReviewed]);
+
+  // Bulk actions configuration
+  const bulkActions: BulkAction[] = [
+    ...(onBulkDelete ? [commonBulkActions.delete(handleBulkDelete)] : []),
+    ...(onBulkDownloadRecordings ? [{
+      id: 'download-recordings',
+      label: 'Download Recordings',
+      icon: <Download className="h-4 w-4" />,
+      variant: 'outline' as const,
+      onClick: handleBulkDownloadRecordings,
+    }] : []),
+    ...(onBulkMarkReviewed ? [{
+      id: 'mark-reviewed',
+      label: 'Mark Reviewed',
+      icon: <CheckCircle className="h-4 w-4" />,
+      variant: 'outline' as const,
+      onClick: handleBulkMarkReviewed,
+    }] : []),
+  ];
 
   const sortedCalls = [...calls].sort((a, b) => {
     const aValue = a[sortField];
@@ -114,6 +184,7 @@ export function CallsTable({
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-12"></TableHead>
               <TableHead>Direction</TableHead>
               <TableHead>Contact</TableHead>
               <TableHead>Phone Numbers</TableHead>
@@ -126,6 +197,7 @@ export function CallsTable({
           <TableBody>
             {Array.from({ length: 5 }).map((_, i) => (
               <TableRow key={i}>
+                <TableCell className="animate-pulse bg-gray-200 h-4"></TableCell>
                 <TableCell className="animate-pulse bg-gray-200 h-4"></TableCell>
                 <TableCell className="animate-pulse bg-gray-200 h-4"></TableCell>
                 <TableCell className="animate-pulse bg-gray-200 h-4"></TableCell>
@@ -153,9 +225,30 @@ export function CallsTable({
 
   return (
     <div className="rounded-md border">
+      <BulkActions
+        selectedItems={Array.from(selectedCalls)}
+        totalItems={calls.length}
+        actions={bulkActions}
+        onSelectionChange={handleSelectionChange}
+        onSelectAll={handleSelectAll}
+        onClearSelection={handleClearSelection}
+        isLoading={loading}
+      />
       <Table>
         <TableHeader>
           <TableRow>
+            <TableHead className="w-12">
+              <Checkbox
+                checked={selectedCalls.size === calls.length && calls.length > 0}
+                ref={(el) => {
+                  if (el) {
+                    el.indeterminate = selectedCalls.size > 0 && selectedCalls.size < calls.length;
+                  }
+                }}
+                onCheckedChange={handleSelectAll}
+                disabled={loading}
+              />
+            </TableHead>
             <TableHead 
               className="cursor-pointer hover:bg-gray-50"
               onClick={() => handleSort("direction")}
@@ -200,6 +293,13 @@ export function CallsTable({
         <TableBody>
           {sortedCalls.map((call) => (
             <TableRow key={call.id}>
+              <TableCell>
+                <Checkbox
+                  checked={selectedCalls.has(call.id)}
+                  onCheckedChange={(checked) => handleCallSelect(call.id, !!checked)}
+                  disabled={loading}
+                />
+              </TableCell>
               <TableCell>
                 <div className="flex items-center gap-2">
                   {call.direction === "INBOUND" ? (

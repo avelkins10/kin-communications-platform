@@ -605,10 +605,6 @@ interface KINConfig {
     url: string;
     ssl: boolean;
   };
-  redis: {
-    url: string;
-    password?: string;
-  };
   logging: {
     level: 'debug' | 'info' | 'warn' | 'error';
     format: 'json' | 'text';

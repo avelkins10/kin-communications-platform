@@ -43,8 +43,8 @@ const callStatuses: { value: CallStatus; label: string }[] = [
 
 export function CallSearch({ onSearch, loading = false }: CallSearchProps) {
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedDirection, setSelectedDirection] = useState<CallDirection | "">("");
-  const [selectedStatus, setSelectedStatus] = useState<CallStatus | "">("");
+  const [selectedDirection, setSelectedDirection] = useState<CallDirection | "all">("all");
+  const [selectedStatus, setSelectedStatus] = useState<CallStatus | "all">("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
@@ -65,11 +65,11 @@ export function CallSearch({ onSearch, loading = false }: CallSearchProps) {
       params.search = searchTerm.trim();
     }
     
-    if (selectedDirection) {
+    if (selectedDirection && selectedDirection !== "all") {
       params.direction = selectedDirection;
     }
     
-    if (selectedStatus) {
+    if (selectedStatus && selectedStatus !== "all") {
       params.status = selectedStatus;
     }
     
@@ -111,9 +111,9 @@ export function CallSearch({ onSearch, loading = false }: CallSearchProps) {
     if (filterToRemove.startsWith("Search:")) {
       setSearchTerm("");
     } else if (filterToRemove.startsWith("Direction:")) {
-      setSelectedDirection("");
+      setSelectedDirection("all");
     } else if (filterToRemove.startsWith("Status:")) {
-      setSelectedStatus("");
+      setSelectedStatus("all");
     } else if (filterToRemove.startsWith("From:")) {
       setDateFrom("");
     } else if (filterToRemove.startsWith("To:")) {
@@ -139,12 +139,12 @@ export function CallSearch({ onSearch, loading = false }: CallSearchProps) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="space-y-2">
           <Label htmlFor="direction-filter">Call Direction</Label>
-          <Select value={selectedDirection} onValueChange={(value) => setSelectedDirection(value as CallDirection)}>
+          <Select value={selectedDirection} onValueChange={(value) => setSelectedDirection(value as CallDirection | "all")}>
             <SelectTrigger>
               <SelectValue placeholder="All directions" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All directions</SelectItem>
+              <SelectItem value="all">All directions</SelectItem>
               {callDirections.map((direction) => (
                 <SelectItem key={direction.value} value={direction.value}>
                   {direction.label}
@@ -156,12 +156,12 @@ export function CallSearch({ onSearch, loading = false }: CallSearchProps) {
 
         <div className="space-y-2">
           <Label htmlFor="status-filter">Call Status</Label>
-          <Select value={selectedStatus} onValueChange={(value) => setSelectedStatus(value as CallStatus)}>
+          <Select value={selectedStatus} onValueChange={(value) => setSelectedStatus(value as CallStatus | "all")}>
             <SelectTrigger>
               <SelectValue placeholder="All statuses" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All statuses</SelectItem>
+              <SelectItem value="all">All statuses</SelectItem>
               {callStatuses.map((status) => (
                 <SelectItem key={status.value} value={status.value}>
                   {status.label}

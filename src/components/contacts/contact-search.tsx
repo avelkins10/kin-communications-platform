@@ -36,9 +36,9 @@ const contactTypes: { value: ContactType; label: string }[] = [
 
 export function ContactSearch({ onSearch, groups, loading = false }: ContactSearchProps) {
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedType, setSelectedType] = useState<ContactType | "">("");
+  const [selectedType, setSelectedType] = useState<ContactType | "all">("all");
   const [selectedDepartment, setSelectedDepartment] = useState("");
-  const [selectedGroup, setSelectedGroup] = useState("");
+  const [selectedGroup, setSelectedGroup] = useState("all");
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
 
@@ -58,7 +58,7 @@ export function ContactSearch({ onSearch, groups, loading = false }: ContactSear
       params.search = searchTerm.trim();
     }
     
-    if (selectedType) {
+    if (selectedType && selectedType !== "all") {
       params.type = selectedType;
     }
     
@@ -66,7 +66,7 @@ export function ContactSearch({ onSearch, groups, loading = false }: ContactSear
       params.department = selectedDepartment.trim();
     }
     
-    if (selectedGroup) {
+    if (selectedGroup && selectedGroup !== "all") {
       params.groupId = selectedGroup;
     }
     
@@ -82,9 +82,9 @@ export function ContactSearch({ onSearch, groups, loading = false }: ContactSear
     const filters: string[] = [];
     
     if (searchTerm.trim()) filters.push(`Search: "${searchTerm.trim()}"`);
-    if (selectedType) filters.push(`Type: ${contactTypes.find(t => t.value === selectedType)?.label}`);
+    if (selectedType && selectedType !== "all") filters.push(`Type: ${contactTypes.find(t => t.value === selectedType)?.label}`);
     if (selectedDepartment.trim()) filters.push(`Department: "${selectedDepartment.trim()}"`);
-    if (selectedGroup) {
+    if (selectedGroup && selectedGroup !== "all") {
       const group = groups.find(g => g.id === selectedGroup);
       if (group) filters.push(`Group: ${group.name}`);
     }
@@ -95,9 +95,9 @@ export function ContactSearch({ onSearch, groups, loading = false }: ContactSear
 
   const clearFilters = () => {
     setSearchTerm("");
-    setSelectedType("");
+    setSelectedType("all");
     setSelectedDepartment("");
-    setSelectedGroup("");
+    setSelectedGroup("all");
     setShowFavoritesOnly(false);
     setActiveFilters([]);
     onSearch({});
@@ -107,11 +107,11 @@ export function ContactSearch({ onSearch, groups, loading = false }: ContactSear
     if (filterToRemove.startsWith("Search:")) {
       setSearchTerm("");
     } else if (filterToRemove.startsWith("Type:")) {
-      setSelectedType("");
+      setSelectedType("all");
     } else if (filterToRemove.startsWith("Department:")) {
       setSelectedDepartment("");
     } else if (filterToRemove.startsWith("Group:")) {
-      setSelectedGroup("");
+      setSelectedGroup("all");
     } else if (filterToRemove === "Favorites only") {
       setShowFavoritesOnly(false);
     }
@@ -140,7 +140,7 @@ export function ContactSearch({ onSearch, groups, loading = false }: ContactSear
               <SelectValue placeholder="All types" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All types</SelectItem>
+              <SelectItem value="all">All types</SelectItem>
               {contactTypes.map((type) => (
                 <SelectItem key={type.value} value={type.value}>
                   {type.label}
@@ -168,7 +168,7 @@ export function ContactSearch({ onSearch, groups, loading = false }: ContactSear
               <SelectValue placeholder="All groups" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All groups</SelectItem>
+              <SelectItem value="all">All groups</SelectItem>
               {groups.map((group) => (
                 <SelectItem key={group.id} value={group.id}>
                   {group.name}

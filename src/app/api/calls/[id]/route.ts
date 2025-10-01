@@ -13,9 +13,11 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const { id } = params;
+
     const call = await prisma.call.findUnique({
       where: {
-        id: params.id,
+        id,
         userId: session.user.id, // Ensure user can only access their own calls
       },
       include: {

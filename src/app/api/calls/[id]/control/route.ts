@@ -15,13 +15,15 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const { id } = params;
+
     const body = await request.json();
     const validatedData = callControlSchema.parse(body);
 
     // Find the call and verify ownership
     const call = await prisma.call.findUnique({
       where: {
-        id: params.id,
+        id,
         userId: session.user.id,
       },
     });

@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Call } from "@/types/index";
-import { Play, Pause, Download, Volume2, VolumeX } from "lucide-react";
+import { Play, Pause, Download, Volume2, VolumeX, BarChart3 } from "lucide-react";
 
 interface RecordingPlayerProps {
   call: Call;
@@ -20,8 +20,65 @@ export function RecordingPlayer({ call, onClose }: RecordingPlayerProps) {
   const [playbackRate, setPlaybackRate] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [waveformData, setWaveformData] = useState<number[]>([]);
+  const [showWaveform, setShowWaveform] = useState(true);
+  const [waveformLoading, setWaveformLoading] = useState(false);
   
   const audioRef = useRef<HTMLAudioElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+
+  // Generate waveform data from audio
+  const generateWaveform = async (audioBuffer: AudioBuffer): Promise<number[]> => {
+    const channelData = audioBuffer.getChannelData(0);
+    const samples = 200; // Number of bars in the waveform
+    const blockSize = Math.floor(channelData.length / samples);
+    const waveform: number[] = [];
+
+    for (let i = 0; i < samples; i++) {
+      let sum = 0;
+      for (let j = 0; j < blockSize; j++) {
+        sum += Math.abs(channelData[i * blockSize + j]);
+      }
+      waveform.push(sum / blockSize);
+    }
+
+    return waveform;
+  };
+
+  // Draw waveform on canvas
+  const drawWaveform = () => {
+    const canvas = canvasRef.current;
+    if (!canvas || waveformData.length === 0) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const width = canvas.width;
+    const height = canvas.height;
+    const barWidth = width / waveformData.length;
+    const maxAmplitude = Math.max(...waveformData);
+
+    ctx.clearRect(0, 0, width, height);
+    ctx.fillStyle = '#e5e7eb'; // Light gray for bars
+
+    waveformData.forEach((amplitude, index) => {
+      const barHeight = (amplitude / maxAmplitude) * height * 0.8;
+      const x = index * barWidth;
+      const y = (height - barHeight) / 2;
+
+      ctx.fillRect(x, y, barWidth - 1, barHeight);
+    });
+
+    // Draw progress indicator
+    if (duration > 0) {
+      const progress = currentTime / duration;
+      const progressX = progress * width;
+      
+      ctx.fillStyle = '#3b82f6'; // Blue for progress
+      ctx.fillRect(0, 0, progressX, height);
+    }
+  };
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -36,6 +93,29 @@ export function RecordingPlayer({ call, onClose }: RecordingPlayerProps) {
     };
     const handleLoadStart = () => setLoading(true);
     const handleCanPlay = () => setLoading(false);
+    const handleLoadedData = async () => {
+      if (showWaveform && !waveformData.length) {
+        setWaveformLoading(true);
+        try {
+          // Create audio context and decode audio data
+          if (!audioContextRef.current) {
+            audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+          }
+          
+          const response = await fetch(call.recordingUrl!);
+          const arrayBuffer = await response.arrayBuffer();
+          const audioBuffer = await audioContextRef.current.decodeAudioData(arrayBuffer);
+          
+          const waveform = await generateWaveform(audioBuffer);
+          setWaveformData(waveform);
+        } catch (err) {
+          console.warn('Failed to generate waveform:', err);
+          setShowWaveform(false);
+        } finally {
+          setWaveformLoading(false);
+        }
+      }
+    };
 
     audio.addEventListener("timeupdate", updateTime);
     audio.addEventListener("loadedmetadata", updateDuration);
@@ -43,6 +123,7 @@ export function RecordingPlayer({ call, onClose }: RecordingPlayerProps) {
     audio.addEventListener("error", handleError);
     audio.addEventListener("loadstart", handleLoadStart);
     audio.addEventListener("canplay", handleCanPlay);
+    audio.addEventListener("loadeddata", handleLoadedData);
 
     return () => {
       audio.removeEventListener("timeupdate", updateTime);
@@ -51,8 +132,14 @@ export function RecordingPlayer({ call, onClose }: RecordingPlayerProps) {
       audio.removeEventListener("error", handleError);
       audio.removeEventListener("loadstart", handleLoadStart);
       audio.removeEventListener("canplay", handleCanPlay);
+      audio.removeEventListener("loadeddata", handleLoadedData);
     };
-  }, []);
+  }, [call.recordingUrl, showWaveform, waveformData.length]);
+
+  // Redraw waveform when data or progress changes
+  useEffect(() => {
+    drawWaveform();
+  }, [waveformData, currentTime, duration]);
 
   const togglePlayPause = () => {
     const audio = audioRef.current;
@@ -164,6 +251,68 @@ export function RecordingPlayer({ call, onClose }: RecordingPlayerProps) {
             <div>Contact: {call.contact.firstName} {call.contact.lastName}</div>
           )}
         </div>
+
+        {/* Waveform Visualization */}
+        {showWaveform && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <BarChart3 className="h-4 w-4" />
+                <span className="text-sm font-medium">Waveform</span>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowWaveform(false)}
+                className="text-xs"
+              >
+                Hide
+              </Button>
+            </div>
+            <div className="relative">
+              <canvas
+                ref={canvasRef}
+                width={400}
+                height={60}
+                className="w-full h-15 border rounded cursor-pointer"
+                onClick={(e) => {
+                  if (duration > 0) {
+                    const canvas = canvasRef.current;
+                    if (!canvas) return;
+                    
+                    const rect = canvas.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const clickTime = (x / canvas.width) * duration;
+                    
+                    if (audioRef.current) {
+                      audioRef.current.currentTime = clickTime;
+                      setCurrentTime(clickTime);
+                    }
+                  }
+                }}
+              />
+              {waveformLoading && (
+                <div className="absolute inset-0 flex items-center justify-center bg-background/80 rounded">
+                  <div className="text-xs text-muted-foreground">Generating waveform...</div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {!showWaveform && (
+          <div className="flex justify-center">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowWaveform(true)}
+              className="text-xs"
+            >
+              <BarChart3 className="h-3 w-3 mr-1" />
+              Show Waveform
+            </Button>
+          </div>
+        )}
 
         {/* Playback Controls */}
         <div className="flex items-center gap-2">

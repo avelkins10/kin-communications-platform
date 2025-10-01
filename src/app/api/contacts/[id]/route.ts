@@ -2,24 +2,27 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { revalidateTag } from "next/cache";
 import { updateContactSchema } from "@/lib/validations/contact";
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+// GET: fetch contact by ID with enhanced data
+export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const { id } = params;
+
     const contact = await prisma.contact.findFirst({
       where: {
-        id: params.id,
+        id,
         ownerId: session.user.id,
       },
       include: {
+        projectCoordinator: { select: { id: true, name: true, email: true, department: true } },
+        lastContactByUser: { select: { id: true, name: true, email: true } },
         groups: {
           include: {
             group: true,
@@ -53,6 +56,38 @@ export async function GET(
   }
 }
 
+// PATCH: update project coordinator and/or status fields
+export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const contactId = params.id;
+    const body = await request.json();
+
+    const { projectCoordinatorId, projectStatus, isFavorite } = body || {};
+
+    const updated = await prisma.contact.update({
+      where: { id: contactId },
+      data: {
+        projectCoordinatorId: projectCoordinatorId ?? undefined,
+        projectStatus: projectStatus ?? undefined,
+        isFavorite: typeof isFavorite === 'boolean' ? isFavorite : undefined,
+      },
+    });
+
+    revalidateTag('contacts');
+    if (updated.type === 'CUSTOMER') revalidateTag('CUSTOMERS');
+
+    return NextResponse.json(updated);
+  } catch (error) {
+    console.error('Error updating contact:', error);
+    return NextResponse.json({ error: 'Failed to update contact' }, { status: 500 });
+  }
+}
+
 export async function PUT(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -63,13 +98,15 @@ export async function PUT(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const { id } = params;
+
     const body = await request.json();
     const validatedData = updateContactSchema.parse(body);
 
     // Check if contact exists and belongs to user
     const existingContact = await prisma.contact.findFirst({
       where: {
-        id: params.id,
+        id: id,
         ownerId: session.user.id,
       },
     });
@@ -84,7 +121,7 @@ export async function PUT(
         where: {
           phone: validatedData.phone,
           ownerId: session.user.id,
-          id: { not: params.id },
+          id: { not: id },
         },
       });
 
@@ -98,7 +135,7 @@ export async function PUT(
 
     // Update contact
     const updatedContact = await prisma.contact.update({
-      where: { id: params.id },
+      where: { id: id },
       data: {
         ...validatedData,
         tags: validatedData.tags || undefined,
@@ -116,14 +153,14 @@ export async function PUT(
     if (validatedData.groupIds !== undefined) {
       // Remove existing group memberships
       await prisma.contactGroupOnContact.deleteMany({
-        where: { contactId: params.id },
+        where: { contactId: id },
       });
 
       // Add new group memberships
       if (validatedData.groupIds.length > 0) {
         await prisma.contactGroupOnContact.createMany({
           data: validatedData.groupIds.map((groupId) => ({
-            contactId: params.id,
+            contactId: id,
             groupId,
           })),
         });
@@ -131,7 +168,7 @@ export async function PUT(
 
       // Fetch updated contact with groups
       const finalContact = await prisma.contact.findUnique({
-        where: { id: params.id },
+        where: { id: id },
         include: {
           groups: {
             include: {
@@ -176,10 +213,12 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const { id } = params;
+
     // Check if contact exists and belongs to user
     const existingContact = await prisma.contact.findFirst({
       where: {
-        id: params.id,
+        id: id,
         ownerId: session.user.id,
       },
     });
@@ -190,7 +229,7 @@ export async function DELETE(
 
     // Delete contact (this will cascade delete related records)
     await prisma.contact.delete({
-      where: { id: params.id },
+      where: { id: id },
     });
 
     return NextResponse.json({ success: true });

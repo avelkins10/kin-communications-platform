@@ -20,4 +20,6 @@ export function getTwilioClient(): Twilio {
   return twilioClient;
 }
 
+// Export the client instance for direct access
+export { twilioClient };
 export default getTwilioClient;

@@ -63,7 +63,7 @@ export function CallControls({
   }
 
   return (
-    <div className="flex items-center gap-2 p-4 bg-gray-50 rounded-lg">
+    <div className="flex items-center gap-2 p-4 bg-gray-50 rounded-lg" data-testid="call-controls">
       <div className="flex items-center gap-2">
         <Button
           variant={isMuted ? "destructive" : "outline"}
@@ -71,6 +71,7 @@ export function CallControls({
           onClick={handleMute}
           disabled={loading}
           title={isMuted ? "Unmute" : "Mute"}
+          data-testid="mute-button"
         >
           {isMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
         </Button>
@@ -81,6 +82,7 @@ export function CallControls({
           onClick={handleHold}
           disabled={loading}
           title={isOnHold ? "Resume" : "Hold"}
+          data-testid="hold-button"
         >
           {isOnHold ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
         </Button>
@@ -91,6 +93,7 @@ export function CallControls({
           onClick={() => onHangup(call)}
           disabled={loading}
           title="Hang Up"
+          data-testid="end-call-button"
         >
           <PhoneOff className="h-4 w-4" />
         </Button>

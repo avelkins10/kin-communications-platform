@@ -27,7 +27,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
+    <div className="flex min-h-screen items-center justify-center p-4" data-testid="login-page">
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle>Sign in</CardTitle>
@@ -36,19 +36,41 @@ export default function LoginPage() {
           <form onSubmit={onSubmit} className="space-y-4">
             <div className="space-y-2">
               <label className="text-sm" htmlFor="email">Email</label>
-              <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} required />
+              <Input 
+                id="email" 
+                type="email" 
+                value={email} 
+                onChange={e => setEmail(e.target.value)} 
+                required 
+                data-testid="email"
+              />
             </div>
             <div className="space-y-2">
               <label className="text-sm" htmlFor="password">Password</label>
-              <Input id="password" type="password" value={password} onChange={e => setPassword(e.target.value)} required />
+              <Input 
+                id="password" 
+                type="password" 
+                value={password} 
+                onChange={e => setPassword(e.target.value)} 
+                required 
+                data-testid="password"
+              />
             </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
-            <Button type="submit" className="w-full" disabled={loading}>
+            {error && <p className="text-sm text-destructive" data-testid="error-message">{error}</p>}
+            <Button type="submit" className="w-full" disabled={loading} data-testid="login-button">
               {loading ? "Signing in..." : "Sign in"}
             </Button>
           </form>
           <div className="mt-4">
-            <Button type="button" variant="outline" className="w-full" onClick={() => signIn("google")}>Sign in with Google</Button>
+            <Button 
+              type="button" 
+              variant="outline" 
+              className="w-full" 
+              onClick={() => signIn("google")}
+              data-testid="google-signin-button"
+            >
+              Sign in with Google
+            </Button>
           </div>
         </CardContent>
         <CardFooter>

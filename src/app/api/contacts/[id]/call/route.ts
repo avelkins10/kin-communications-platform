@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getTwilioClient } from "@/lib/twilio/client";
 import { callContactSchema } from "@/lib/validations/contact";
+import { isTestMode, executeIfNotTestMode, generateMockTwilioCallSid, logTestModeActivity } from "@/lib/test-mode";
 
 export async function POST(
   request: NextRequest,
@@ -15,13 +16,16 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Await params since it's now a Promise in Next.js 15
+    const { id } = params;
+
     const body = await request.json();
-    const validatedData = callContactSchema.parse({ contactId: params.id });
+    const validatedData = callContactSchema.parse({ contactId: id });
 
     // Check if contact exists and belongs to user
     const contact = await prisma.contact.findFirst({
       where: {
-        id: params.id,
+        id,
         ownerId: session.user.id,
       },
     });
@@ -50,17 +54,29 @@ export async function POST(
     });
 
     try {
-      // Initiate Twilio call
-      const twilioClient = getTwilioClient();
-      const twilioCall = await twilioClient.calls.create({
-        to: contact.phone,
-        from: process.env.TWILIO_PHONE_NUMBER!,
-        statusCallback: `${process.env.PUBLIC_BASE_URL}/api/webhooks/twilio/status`,
-        statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
-        record: true,
-        recordingChannels: 'dual',
-        recordingStatusCallback: `${process.env.PUBLIC_BASE_URL}/api/webhooks/twilio/recording`,
-      });
+      // Initiate Twilio call (or mock in test mode)
+      const twilioCall = await executeIfNotTestMode(
+        async () => {
+          const twilioClient = getTwilioClient();
+          return await twilioClient.calls.create({
+            to: contact.phone,
+            from: process.env.TWILIO_PHONE_NUMBER!,
+            statusCallback: `${process.env.PUBLIC_BASE_URL}/api/webhooks/twilio/status`,
+            statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
+            record: true,
+            recordingChannels: 'dual',
+            recordingStatusCallback: `${process.env.PUBLIC_BASE_URL}/api/webhooks/twilio/recording`,
+          });
+        },
+        {
+          sid: generateMockTwilioCallSid(),
+          status: 'ringing',
+          direction: 'outbound',
+          from: process.env.TWILIO_PHONE_NUMBER || '+15551234567',
+          to: contact.phone,
+          startTime: new Date().toISOString(),
+        }
+      );
 
       // Update call record with Twilio CallSid
       await prisma.call.update({
@@ -71,13 +87,19 @@ export async function POST(
         },
       });
 
+      logTestModeActivity('Twilio', 'Call initiated', {
+        contactId: contact.id,
+        phone: contact.phone,
+        callSid: twilioCall.sid
+      });
+
       console.log(`Initiated call to ${contact.phone} for contact ${contact.firstName} ${contact.lastName}, Twilio CallSid: ${twilioCall.sid}`);
 
       return NextResponse.json({
         success: true,
         callId: call.id,
         twilioCallSid: twilioCall.sid,
-        message: "Call initiated successfully",
+        message: isTestMode() ? "Call initiated successfully (TEST_MODE)" : "Call initiated successfully",
       });
     } catch (twilioError) {
       // Update call status to failed if Twilio call creation fails

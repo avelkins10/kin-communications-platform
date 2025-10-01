@@ -1,13 +1,15 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Contact, ContactGroup, ContactCreateInput, ContactUpdateInput, ContactSearchParams, ContactImportResult } from "@/types/index";
+import { logger } from "@/lib/logging/browser-logger";
 
 interface UseContactsReturn {
   contacts: Contact[];
   groups: ContactGroup[];
   loading: boolean;
   error: string | null;
+  fromCache: boolean;
   searchContacts: (params: ContactSearchParams) => Promise<void>;
   createContact: (data: ContactCreateInput) => Promise<Contact>;
   updateContact: (id: string, data: ContactUpdateInput) => Promise<Contact>;
@@ -17,6 +19,7 @@ interface UseContactsReturn {
   sendSms: (id: string, message: string) => Promise<void>;
   importContacts: (file: File) => Promise<ContactImportResult>;
   refreshContacts: () => Promise<void>;
+  invalidateCache: () => Promise<void>;
 }
 
 export function useContacts(): UseContactsReturn {
@@ -24,17 +27,53 @@ export function useContacts(): UseContactsReturn {
   const [groups, setGroups] = useState<ContactGroup[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fromCache, setFromCache] = useState(false);
+  const cacheRef = useRef<Map<string, { data: any; timestamp: number }>>(new Map());
 
   const handleError = (err: any) => {
-    console.error("Contact operation error:", err);
+    logger.error("Contact operation error:", err);
     setError(err.message || "An error occurred");
   };
+
+  const invalidateCache = useCallback(async () => {
+    try {
+      // Clear local cache
+      cacheRef.current.clear();
+
+      // Ask server to invalidate cache (best-effort)
+      try {
+        await fetch('/api/cache/invalidate', { method: 'POST' });
+      } catch {
+        // ignore network errors; fallback to refetch
+      }
+
+      logger.info('Contact cache invalidated');
+    } catch (error) {
+      logger.error('Failed to invalidate contact cache:', error);
+    }
+  }, []);
 
   const searchContacts = useCallback(async (params: ContactSearchParams) => {
     setLoading(true);
     setError(null);
+    setFromCache(false);
     
     try {
+      // Generate cache key
+      const cacheKey = `contacts:${JSON.stringify(params)}`;
+      const now = Date.now();
+      const cacheExpiry = 5 * 60 * 1000; // 5 minutes
+      
+      // Check local cache first
+      const cached = cacheRef.current.get(cacheKey);
+      if (cached && (now - cached.timestamp) < cacheExpiry) {
+        setContacts(cached.data.contacts || []);
+        setFromCache(true);
+        setLoading(false);
+        logger.debug('Contacts loaded from local cache');
+        return;
+      }
+
       const searchParams = new URLSearchParams();
       
       if (params.search) searchParams.append("search", params.search);
@@ -47,14 +86,31 @@ export function useContacts(): UseContactsReturn {
       if (params.sortBy) searchParams.append("sortBy", params.sortBy);
       if (params.sortOrder) searchParams.append("sortOrder", params.sortOrder);
 
+      const startTime = Date.now();
       const response = await fetch(`/api/contacts?${searchParams}`);
+      const responseTime = Date.now() - startTime;
       
       if (!response.ok) {
         throw new Error("Failed to fetch contacts");
       }
 
       const data = await response.json();
+      
+      // Cache the result locally
+      cacheRef.current.set(cacheKey, {
+        data,
+        timestamp: now,
+      });
+      
       setContacts(data.contacts || []);
+      
+      // Log performance metrics
+      logger.info('Contacts fetched', {
+        count: data.contacts?.length || 0,
+        responseTime: `${responseTime}ms`,
+        fromCache: false,
+      });
+      
     } catch (err) {
       handleError(err);
     } finally {
@@ -81,7 +137,15 @@ export function useContacts(): UseContactsReturn {
       }
 
       const newContact = await response.json();
+      
+      // Optimistic update
       setContacts(prev => [newContact, ...prev]);
+      
+      // Invalidate cache
+      await invalidateCache();
+      
+      logger.info('Contact created', { contactId: newContact.id });
+      
       return newContact;
     } catch (err) {
       handleError(err);
@@ -89,7 +153,7 @@ export function useContacts(): UseContactsReturn {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [invalidateCache]);
 
   const updateContact = useCallback(async (id: string, data: ContactUpdateInput): Promise<Contact> => {
     setLoading(true);
@@ -273,6 +337,7 @@ export function useContacts(): UseContactsReturn {
     groups,
     loading,
     error,
+    fromCache,
     searchContacts,
     createContact,
     updateContact,
@@ -282,6 +347,7 @@ export function useContacts(): UseContactsReturn {
     sendSms,
     importContacts,
     refreshContacts,
+    invalidateCache,
   };
 }
 
