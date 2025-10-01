@@ -1,0 +1,349 @@
+name: End-to-End Tests
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+  push:
+    branches: [ main ]
+  schedule:
+    # Run E2E tests daily at 2 AM UTC
+    - cron: '0 2 * * *'
+
+env:
+  NODE_VERSION: '18'
+  PNPM_VERSION: '8'
+
+jobs:
+  e2e-tests:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: kin_communications_e2e
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/kin_communications_e2e
+      NEXTAUTH_SECRET: e2e-test-secret-key
+      NEXTAUTH_URL: http://localhost:3000
+      TWILIO_ACCOUNT_SID: test-account-sid
+      TWILIO_AUTH_TOKEN: test-auth-token
+      TWILIO_PHONE_NUMBER: +15551234567
+      TWILIO_WEBHOOK_URL: https://test.ngrok.io
+      QUICKBASE_REALM: test-realm
+      QUICKBASE_USER_TOKEN: test-user-token
+      QUICKBASE_APP_ID: test-app-id
+      SOCKET_IO_CORS_ORIGIN: http://localhost:3000
+      NODE_ENV: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v3
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm playwright install --with-deps
+
+      - name: Generate Prisma client
+        run: pnpm prisma generate
+
+      - name: Run database migrations
+        run: pnpm prisma migrate deploy
+
+      - name: Seed test data
+        run: pnpm test:seed
+
+      - name: Build application
+        run: pnpm build
+
+      - name: Start application server
+        run: |
+          pnpm start &
+          sleep 10
+          curl -f http://localhost:3000/api/health || exit 1
+        env:
+          PORT: 3000
+
+      - name: Run Playwright tests
+        run: pnpm e2e
+        env:
+          BASE_URL: http://localhost:3000
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 30
+
+      - name: Upload test videos
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: playwright-videos
+          path: test-results/
+          retention-days: 30
+
+      - name: Upload test screenshots
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: playwright-screenshots
+          path: test-results/
+          retention-days: 30
+
+  e2e-preview:
+    name: E2E Tests on Preview
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm playwright install --with-deps
+
+      - name: Get preview URL from PR comment
+        id: get-preview-url
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            // Find the latest preview deployment comment
+            const previewComment = comments
+              .filter(comment => 
+                comment.user.type === 'Bot' && 
+                comment.body.includes('Preview deployment')
+              )
+              .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+            
+            if (previewComment) {
+              // Extract URL from comment body
+              const urlMatch = previewComment.body.match(/\*\*Preview URL:\*\* (https:\/\/[^\s]+)/);
+              if (urlMatch) {
+                core.setOutput('url', urlMatch[1]);
+                return;
+              }
+            }
+            
+            // Fallback to default preview URL
+            core.setOutput('url', `https://preview-${context.issue.number}.vercel.app`);
+
+      - name: Run Playwright tests on preview
+        run: pnpm e2e:preview
+        env:
+          BASE_URL: ${{ steps.get-preview-url.outputs.url }}
+
+      - name: Upload preview test results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: playwright-preview-report
+          path: playwright-report/
+          retention-days: 30
+
+  accessibility-tests:
+    name: Accessibility Tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm playwright install --with-deps
+
+      - name: Run accessibility tests
+        run: pnpm e2e:accessibility
+
+      - name: Upload accessibility test results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: accessibility-report
+          path: accessibility-report/
+          retention-days: 30
+
+  performance-tests:
+    name: Performance Tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm playwright install --with-deps
+
+      - name: Run performance tests
+        run: pnpm e2e:performance
+
+      - name: Upload performance test results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: performance-report
+          path: performance-report/
+          retention-days: 30
+
+  visual-regression:
+    name: Visual Regression Tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm playwright install --with-deps
+
+      - name: Run visual regression tests
+        run: pnpm e2e:visual
+
+      - name: Upload visual test results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: visual-regression-report
+          path: visual-regression-report/
+          retention-days: 30
+
+  notify-e2e-results:
+    name: Notify E2E Results
+    runs-on: ubuntu-latest
+    needs: [e2e-tests, e2e-preview, accessibility-tests, performance-tests, visual-regression]
+    if: always() && github.event_name == 'pull_request'
+    
+    steps:
+      - name: Comment E2E Results
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const results = {
+              e2e: '${{ needs.e2e-tests.result }}',
+              preview: '${{ needs.e2e-preview.result }}',
+              accessibility: '${{ needs.accessibility-tests.result }}',
+              performance: '${{ needs.performance-tests.result }}',
+              visual: '${{ needs.visual-regression.result }}'
+            };
+            
+            const allPassed = Object.values(results).every(result => result === 'success');
+            const emoji = allPassed ? '✅' : '❌';
+            const status = allPassed ? 'All E2E tests passed!' : 'Some E2E tests failed';
+            
+            const commentBody = `## ${emoji} E2E Test Results: ${status}
+            
+            | Test Suite | Status |
+            |------------|--------|
+            | Core E2E Tests | ${results.e2e === 'success' ? '✅ Passed' : '❌ Failed'} |
+            | Preview Tests | ${results.preview === 'success' ? '✅ Passed' : '❌ Failed'} |
+            | Accessibility Tests | ${results.accessibility === 'success' ? '✅ Passed' : '❌ Failed'} |
+            | Performance Tests | ${results.performance === 'success' ? '✅ Passed' : '❌ Failed'} |
+            | Visual Regression | ${results.visual === 'success' ? '✅ Passed' : '❌ Failed'} |
+            
+            ${!allPassed ? 'Please check the test artifacts and fix any failing tests before merging.' : 'All tests are passing! Ready for review.'}`;
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: commentBody
+            });

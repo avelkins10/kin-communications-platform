@@ -1,0 +1,669 @@
+name: QA Testing Suite
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      test_suite:
+        description: 'Test suite to run'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - security
+          - api
+          - e2e
+          - performance
+          - cross-browser
+      browser:
+        description: 'Browser to test (for cross-browser tests)'
+        required: false
+        default: 'chromium'
+        type: choice
+        options:
+          - chromium
+          - firefox
+          - webkit
+          - all
+      environment:
+        description: 'Test environment'
+        required: false
+        default: 'ci'
+        type: choice
+        options:
+          - ci
+          - strict
+  schedule:
+    # Run comprehensive QA tests weekly on Sundays at 3 AM UTC
+    - cron: '0 3 * * 0'
+
+env:
+  NODE_VERSION: '18'
+  PNPM_VERSION: '8'
+  TEST_MODE: 'true'
+
+jobs:
+  # Security Testing - Always runs
+  security-tests:
+    name: Security Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: github.event.inputs.test_suite == 'all' || github.event.inputs.test_suite == 'security' || github.event.inputs.test_suite == '' || github.event_name == 'push' || github.event_name == 'pull_request'
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: kin_communications_e2e
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/kin_communications_e2e
+      NEXTAUTH_SECRET: e2e-test-secret-key
+      NEXTAUTH_URL: http://localhost:3000
+      TWILIO_ACCOUNT_SID: test-account-sid
+      TWILIO_AUTH_TOKEN: test-auth-token
+      TWILIO_PHONE_NUMBER: +15551234567
+      TWILIO_WEBHOOK_URL: https://test.ngrok.io
+      QUICKBASE_REALM: test-realm
+      QUICKBASE_USER_TOKEN: test-user-token
+      QUICKBASE_APP_ID: test-app-id
+      SOCKET_IO_CORS_ORIGIN: http://localhost:3000
+      NODE_ENV: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm playwright install --with-deps chromium
+
+      - name: Generate Prisma client
+        run: pnpm prisma generate
+
+      - name: Run database migrations
+        run: pnpm prisma migrate deploy
+
+      - name: Seed test data
+        run: pnpm test:seed
+
+      - name: Build application
+        run: pnpm build
+
+      - name: Start application server
+        run: |
+          pnpm start &
+          sleep 10
+          curl -f http://localhost:3000/api/health || exit 1
+        env:
+          PORT: 3000
+
+      - name: Run security tests
+        run: pnpm playwright test --config playwright.qa.config.ts --project=chromium tests/security/
+        env:
+          BASE_URL: http://localhost:3000
+
+      - name: Upload security test results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: security-test-results
+          path: |
+            playwright-qa-report/
+            test-results/qa/
+            tests/results/
+            tests/reports/
+          retention-days: 30
+
+  # API Testing - Always runs
+  api-tests:
+    name: API Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: github.event.inputs.test_suite == 'all' || github.event.inputs.test_suite == 'api' || github.event.inputs.test_suite == '' || github.event_name == 'push' || github.event_name == 'pull_request'
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: kin_communications_e2e
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/kin_communications_e2e
+      NEXTAUTH_SECRET: e2e-test-secret-key
+      NEXTAUTH_URL: http://localhost:3000
+      TWILIO_ACCOUNT_SID: test-account-sid
+      TWILIO_AUTH_TOKEN: test-auth-token
+      TWILIO_PHONE_NUMBER: +15551234567
+      TWILIO_WEBHOOK_URL: https://test.ngrok.io
+      QUICKBASE_REALM: test-realm
+      QUICKBASE_USER_TOKEN: test-user-token
+      QUICKBASE_APP_ID: test-app-id
+      SOCKET_IO_CORS_ORIGIN: http://localhost:3000
+      NODE_ENV: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm prisma generate
+
+      - name: Run database migrations
+        run: pnpm prisma migrate deploy
+
+      - name: Seed test data
+        run: pnpm test:seed
+
+      - name: Build application
+        run: pnpm build
+
+      - name: Start application server
+        run: |
+          pnpm start &
+          sleep 10
+          curl -f http://localhost:3000/api/health || exit 1
+        env:
+          PORT: 3000
+
+      - name: Run API tests
+        run: pnpm playwright test --config playwright.qa.config.ts tests/integration/api-endpoints.spec.ts
+
+      - name: Upload API test results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: api-test-results
+          path: |
+            coverage/
+            test-results/qa/
+            tests/results/
+            tests/reports/
+          retention-days: 30
+
+  # E2E Testing - Always runs
+  e2e-tests:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    if: github.event.inputs.test_suite == 'all' || github.event.inputs.test_suite == 'e2e' || github.event.inputs.test_suite == '' || github.event_name == 'push' || github.event_name == 'pull_request'
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: kin_communications_e2e
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/kin_communications_e2e
+      NEXTAUTH_SECRET: e2e-test-secret-key
+      NEXTAUTH_URL: http://localhost:3000
+      TWILIO_ACCOUNT_SID: test-account-sid
+      TWILIO_AUTH_TOKEN: test-auth-token
+      TWILIO_PHONE_NUMBER: +15551234567
+      TWILIO_WEBHOOK_URL: https://test.ngrok.io
+      QUICKBASE_REALM: test-realm
+      QUICKBASE_USER_TOKEN: test-user-token
+      QUICKBASE_APP_ID: test-app-id
+      SOCKET_IO_CORS_ORIGIN: http://localhost:3000
+      NODE_ENV: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm playwright install --with-deps chromium
+
+      - name: Generate Prisma client
+        run: pnpm prisma generate
+
+      - name: Run database migrations
+        run: pnpm prisma migrate deploy
+
+      - name: Seed test data
+        run: pnpm test:seed
+
+      - name: Build application
+        run: pnpm build
+
+      - name: Start application server
+        run: |
+          pnpm start &
+          sleep 10
+          curl -f http://localhost:3000/api/health || exit 1
+        env:
+          PORT: 3000
+
+      - name: Run E2E tests
+        run: pnpm playwright test --config playwright.qa.config.ts --project=chromium tests/e2e/
+        env:
+          BASE_URL: http://localhost:3000
+
+      - name: Upload E2E test results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: e2e-test-results
+          path: |
+            playwright-qa-report/
+            test-results/qa/
+            tests/results/
+            tests/reports/
+          retention-days: 30
+
+  # Performance Testing - Gated behind workflow_dispatch or labels
+  performance-tests:
+    name: Performance Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    if: github.event.inputs.test_suite == 'all' || github.event.inputs.test_suite == 'performance' || contains(github.event.pull_request.labels.*.name, 'performance-testing') || github.event_name == 'schedule'
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: kin_communications_e2e
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/kin_communications_e2e
+      NEXTAUTH_SECRET: e2e-test-secret-key
+      NEXTAUTH_URL: http://localhost:3000
+      TWILIO_ACCOUNT_SID: test-account-sid
+      TWILIO_AUTH_TOKEN: test-auth-token
+      TWILIO_PHONE_NUMBER: +15551234567
+      TWILIO_WEBHOOK_URL: https://test.ngrok.io
+      QUICKBASE_REALM: test-realm
+      QUICKBASE_USER_TOKEN: test-user-token
+      QUICKBASE_APP_ID: test-app-id
+      SOCKET_IO_CORS_ORIGIN: http://localhost:3000
+      NODE_ENV: test
+      PERF_MODE: ci
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm playwright install --with-deps chromium
+
+      - name: Generate Prisma client
+        run: pnpm prisma generate
+
+      - name: Run database migrations
+        run: pnpm prisma migrate deploy
+
+      - name: Seed test data
+        run: pnpm test:seed
+
+      - name: Build application
+        run: pnpm build
+
+      - name: Start application server
+        run: |
+          pnpm start &
+          sleep 10
+          curl -f http://localhost:3000/api/health || exit 1
+        env:
+          PORT: 3000
+
+      - name: Run performance tests
+        run: pnpm playwright test --config playwright.qa.config.ts --project=chromium tests/performance/
+        env:
+          BASE_URL: http://localhost:3000
+
+      - name: Upload performance test results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: performance-test-results
+          path: |
+            playwright-qa-report/
+            test-results/qa/
+            tests/results/
+            tests/reports/
+          retention-days: 30
+
+  # Cross-Browser Testing - Gated behind workflow_dispatch or labels
+  cross-browser-tests:
+    name: Cross-Browser Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    if: github.event.inputs.test_suite == 'all' || github.event.inputs.test_suite == 'cross-browser' || contains(github.event.pull_request.labels.*.name, 'cross-browser-testing') || github.event_name == 'schedule'
+    
+    strategy:
+      matrix:
+        browser: [chromium, firefox, webkit]
+        include:
+          - browser: chromium
+            project: chromium
+          - browser: firefox
+            project: firefox
+          - browser: webkit
+            project: webkit
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: kin_communications_e2e
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/kin_communications_e2e
+      NEXTAUTH_SECRET: e2e-test-secret-key
+      NEXTAUTH_URL: http://localhost:3000
+      TWILIO_ACCOUNT_SID: test-account-sid
+      TWILIO_AUTH_TOKEN: test-auth-token
+      TWILIO_PHONE_NUMBER: +15551234567
+      TWILIO_WEBHOOK_URL: https://test.ngrok.io
+      QUICKBASE_REALM: test-realm
+      QUICKBASE_USER_TOKEN: test-user-token
+      QUICKBASE_APP_ID: test-app-id
+      SOCKET_IO_CORS_ORIGIN: http://localhost:3000
+      NODE_ENV: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm playwright install --with-deps ${{ matrix.browser }}
+
+      - name: Generate Prisma client
+        run: pnpm prisma generate
+
+      - name: Run database migrations
+        run: pnpm prisma migrate deploy
+
+      - name: Seed test data
+        run: pnpm test:seed
+
+      - name: Build application
+        run: pnpm build
+
+      - name: Start application server
+        run: |
+          pnpm start &
+          sleep 10
+          curl -f http://localhost:3000/api/health || exit 1
+        env:
+          PORT: 3000
+
+      - name: Run cross-browser tests
+        run: pnpm playwright test --config playwright.qa.config.ts --project=${{ matrix.project }} tests/cross-browser/
+        env:
+          BASE_URL: http://localhost:3000
+
+      - name: Upload cross-browser test results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: cross-browser-test-results-${{ matrix.browser }}
+          path: |
+            playwright-qa-report/
+            test-results/qa/
+            tests/results/
+            tests/reports/
+          retention-days: 30
+
+  # Mobile Testing - Gated behind workflow_dispatch or labels
+  mobile-tests:
+    name: Mobile Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    if: github.event.inputs.test_suite == 'all' || contains(github.event.pull_request.labels.*.name, 'mobile-testing') || github.event_name == 'schedule'
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: kin_communications_e2e
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/kin_communications_e2e
+      NEXTAUTH_SECRET: e2e-test-secret-key
+      NEXTAUTH_URL: http://localhost:3000
+      TWILIO_ACCOUNT_SID: test-account-sid
+      TWILIO_AUTH_TOKEN: test-auth-token
+      TWILIO_PHONE_NUMBER: +15551234567
+      TWILIO_WEBHOOK_URL: https://test.ngrok.io
+      QUICKBASE_REALM: test-realm
+      QUICKBASE_USER_TOKEN: test-user-token
+      QUICKBASE_APP_ID: test-app-id
+      SOCKET_IO_CORS_ORIGIN: http://localhost:3000
+      NODE_ENV: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm playwright install --with-deps
+
+      - name: Generate Prisma client
+        run: pnpm prisma generate
+
+      - name: Run database migrations
+        run: pnpm prisma migrate deploy
+
+      - name: Seed test data
+        run: pnpm test:seed
+
+      - name: Build application
+        run: pnpm build
+
+      - name: Start application server
+        run: |
+          pnpm start &
+          sleep 10
+          curl -f http://localhost:3000/api/health || exit 1
+        env:
+          PORT: 3000
+
+      - name: Run mobile tests
+        run: pnpm playwright test --config playwright.qa.config.ts --project='Mobile Chrome' --project='Mobile Safari' tests/mobile/
+        env:
+          BASE_URL: http://localhost:3000
+
+      - name: Upload mobile test results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: mobile-test-results
+          path: |
+            playwright-qa-report/
+            test-results/qa/
+            tests/results/
+            tests/reports/
+          retention-days: 30
+
+  # Notify QA Results
+  notify-qa-results:
+    name: Notify QA Results
+    runs-on: ubuntu-latest
+    needs: [security-tests, api-tests, e2e-tests, performance-tests, cross-browser-tests, mobile-tests]
+    if: always() && (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch')
+    
+    steps:
+      - name: Comment QA Results
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const results = {
+              security: '${{ needs.security-tests.result }}',
+              api: '${{ needs.api-tests.result }}',
+              e2e: '${{ needs.e2e-tests.result }}',
+              performance: '${{ needs.performance-tests.result }}',
+              crossBrowser: '${{ needs.cross-browser-tests.result }}',
+              mobile: '${{ needs.mobile-tests.result }}'
+            };
+            
+            const coreTests = [results.security, results.api, results.e2e];
+            const allCorePassed = coreTests.every(result => result === 'success');
+            const extendedTests = [results.performance, results.crossBrowser, results.mobile];
+            const extendedPassed = extendedTests.filter(result => result === 'success').length;
+            const extendedTotal = extendedTests.filter(result => result !== 'skipped').length;
+            
+            const emoji = allCorePassed ? '✅' : '❌';
+            const status = allCorePassed ? 'Core QA tests passed!' : 'Core QA tests failed';
+            
+            let commentBody = `## ${emoji} QA Test Results: ${status}
+            
+            ### Core Tests (Required)
+            | Test Suite | Status |
+            |------------|--------|
+            | Security Tests | ${results.security === 'success' ? '✅ Passed' : results.security === 'skipped' ? '⏭️ Skipped' : '❌ Failed'} |
+            | API Tests | ${results.api === 'success' ? '✅ Passed' : results.api === 'skipped' ? '⏭️ Skipped' : '❌ Failed'} |
+            | E2E Tests | ${results.e2e === 'success' ? '✅ Passed' : results.e2e === 'skipped' ? '⏭️ Skipped' : '❌ Failed'} |
+            
+            ### Extended Tests (Optional)
+            | Test Suite | Status |
+            |------------|--------|
+            | Performance Tests | ${results.performance === 'success' ? '✅ Passed' : results.performance === 'skipped' ? '⏭️ Skipped' : '❌ Failed'} |
+            | Cross-Browser Tests | ${results.crossBrowser === 'success' ? '✅ Passed' : results.crossBrowser === 'skipped' ? '⏭️ Skipped' : '❌ Failed'} |
+            | Mobile Tests | ${results.mobile === 'success' ? '✅ Passed' : results.mobile === 'skipped' ? '⏭️ Skipped' : '❌ Failed'} |
+            
+            **Extended Tests Summary:** ${extendedPassed}/${extendedTotal} passed
+            
+            ${!allCorePassed ? '❌ **Core tests must pass before merging.** Please check the test artifacts and fix any failing tests.' : '✅ **Core tests are passing!** Ready for review.'}`;
+            
+            if (github.event_name === 'pull_request') {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: commentBody
+              });
+            } else {
+              console.log(commentBody);
+            }

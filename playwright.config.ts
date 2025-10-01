@@ -1,0 +1,72 @@
+import { defineConfig, devices } from '@playwright/test';
+
+const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
+
+export default defineConfig({
+  testDir: './tests/e2e',
+  fullyParallel: true,
+  forbidOnly: !!process.env.CI,
+  retries: process.env.CI ? 2 : 0,
+  workers: process.env.CI ? 1 : undefined,
+  reporter: [
+    ['html', { outputFolder: 'playwright-report' }],
+    ['json', { outputFile: 'test-results/results.json' }],
+    ['junit', { outputFile: 'test-results/results.xml' }],
+    process.env.CI ? ['github'] : ['list'],
+  ],
+  use: {
+    baseURL: BASE_URL,
+    trace: 'on-first-retry',
+    screenshot: 'only-on-failure',
+    video: 'retain-on-failure',
+    actionTimeout: 10_000,
+    navigationTimeout: 30_000,
+    ignoreHTTPSErrors: true,
+    userAgent: 'Mozilla/5.0 (compatible; Playwright E2E Tests)',
+    viewport: { width: 1280, height: 720 },
+    locale: 'en-US',
+    timezoneId: 'America/New_York',
+  },
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
+    { name: 'webkit', use: { ...devices['Desktop Safari'] } },
+    { name: 'Mobile Chrome', use: { ...devices['Pixel 5'] } },
+    { name: 'Mobile Safari', use: { ...devices['iPhone 12'] } },
+    { name: 'Microsoft Edge', use: { ...devices['Desktop Edge'], channel: 'msedge' } },
+    { name: 'Google Chrome', use: { ...devices['Desktop Chrome'], channel: 'chrome' } },
+  ],
+  webServer: process.env.CI
+    ? undefined
+    : {
+        command: 'pnpm dev',
+        url: BASE_URL,
+        reuseExistingServer: !process.env.CI,
+        timeout: 120_000,
+        env: {
+          NODE_ENV: 'test',
+          DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/kin_communications_e2e',
+          NEXTAUTH_SECRET: 'e2e-test-secret-key',
+          NEXTAUTH_URL: BASE_URL,
+          TWILIO_ACCOUNT_SID: 'test-account-sid',
+          TWILIO_AUTH_TOKEN: 'test-auth-token',
+          TWILIO_PHONE_NUMBER: '+15551234567',
+          TWILIO_WEBHOOK_URL: 'https://test.ngrok.io',
+          QUICKBASE_REALM: 'test-realm',
+          QUICKBASE_USER_TOKEN: 'test-user-token',
+          QUICKBASE_APP_ID: 'test-app-id',
+          SOCKET_IO_CORS_ORIGIN: BASE_URL,
+        },
+      },
+  globalSetup: './tests/global-setup.ts',
+  globalTeardown: './tests/global-teardown.ts',
+  outputDir: 'test-results/',
+  timeout: 30_000,
+  globalTimeout: 60 * 60 * 1000,
+  expect: { timeout: 5_000 },
+  testMatch: ['**/*.spec.ts', '**/*.test.ts'],
+  testIgnore: ['**/node_modules/**', '**/dist/**', '**/.next/**'],
+  maxFailures: process.env.CI ? 10 : undefined,
+  preserveOutput: 'always',
+  updateSnapshots: process.env.UPDATE_SNAPSHOTS === 'true' ? 'all' : 'missing',
+});
